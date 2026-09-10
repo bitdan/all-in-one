@@ -1,10 +1,12 @@
 package com.linger.module.toolhub.auth;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.linger.module.common.page.PageQuery;
+import com.linger.module.toolhub.auth.dto.AdminUserListQuery;
+import com.linger.module.toolhub.auth.dto.UserStatusSummary;
 import com.linger.module.toolhub.auth.mapper.UserMapper;
+import com.linger.module.toolhub.auth.model.UserStatus;
 import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Repository;
 
@@ -23,7 +25,7 @@ public class UserRepository {
         return Optional.ofNullable(userMapper.selectOne(
                 Wrappers.lambdaQuery(UserRecord.class)
                         .eq(UserRecord::getUsername, username)
-                        .ne(UserRecord::getStatus, "deleted")
+                        .ne(UserRecord::getStatus, UserStatus.DELETED)
         ));
     }
 
@@ -31,7 +33,7 @@ public class UserRepository {
         return Optional.ofNullable(userMapper.selectOne(
                 Wrappers.lambdaQuery(UserRecord.class)
                         .eq(UserRecord::getUserId, userId)
-                        .ne(UserRecord::getStatus, "deleted")
+                        .ne(UserRecord::getStatus, UserStatus.DELETED)
         ));
     }
 
@@ -39,7 +41,7 @@ public class UserRepository {
         return userMapper.selectCount(
                 Wrappers.lambdaQuery(UserRecord.class)
                         .eq(UserRecord::getUsername, username)
-                        .ne(UserRecord::getStatus, "deleted")
+                        .ne(UserRecord::getStatus, UserStatus.DELETED)
         ) > 0;
     }
 
@@ -67,7 +69,7 @@ public class UserRepository {
                 .set(UserRecord::getUpdatedAt, now()));
     }
 
-    public void updateAdmin(String userId, String email, String avatar, String status,
+    public void updateAdmin(String userId, String email, String avatar, UserStatus status,
                             List<String> roles, List<String> permissions, String updatedBy) {
         userMapper.update(null, update(userId)
                 .set(UserRecord::getEmail, emptyToNull(email))
@@ -87,37 +89,18 @@ public class UserRepository {
                 .set(UserRecord::getUpdatedAt, now));
     }
 
-    public List<UserRecord> list(String keyword, PageQuery pageQuery) {
-        LambdaQueryWrapper<UserRecord> wrapper = query(keyword, null)
-                .orderByDesc(UserRecord::getCreatedAt)
-                .orderByDesc(UserRecord::getUserId);
-        return userMapper.selectPage(pageQuery.<UserRecord>toPage(false), wrapper).getRecords();
+    public IPage<UserRecord> list(AdminUserListQuery query) {
+        return userMapper.selectUserPage(query.toPage(), query);
     }
 
-    public int count(String keyword, String status) {
-        return userMapper.selectCount(query(keyword, status)).intValue();
-    }
-
-    private LambdaQueryWrapper<UserRecord> query(String keyword, String status) {
-        LambdaQueryWrapper<UserRecord> wrapper = Wrappers.lambdaQuery(UserRecord.class);
-        wrapper.ne(UserRecord::getStatus, "deleted");
-        if (keyword != null && !keyword.trim().isEmpty()) {
-            String pattern = "%" + keyword.trim() + "%";
-            wrapper.and(nested -> nested
-                    .apply("username ILIKE {0}", pattern)
-                    .or()
-                    .apply("email ILIKE {0}", pattern));
-        }
-        if (status != null && !status.trim().isEmpty()) {
-            wrapper.eq(UserRecord::getStatus, status);
-        }
-        return wrapper;
+    public UserStatusSummary summarize(String keyword) {
+        return userMapper.selectStatusSummary(keyword);
     }
 
     private LambdaUpdateWrapper<UserRecord> update(String userId) {
         return new LambdaUpdateWrapper<UserRecord>()
                 .eq(UserRecord::getUserId, userId)
-                .ne(UserRecord::getStatus, "deleted");
+                .ne(UserRecord::getStatus, UserStatus.DELETED);
     }
 
     private OffsetDateTime now() {

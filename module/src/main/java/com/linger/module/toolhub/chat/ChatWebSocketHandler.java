@@ -1,8 +1,10 @@
 package com.linger.module.toolhub.chat;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.linger.module.toolhub.auth.AuthService;
 import com.linger.module.toolhub.auth.UserRecord;
+import com.linger.module.toolhub.chat.dto.ChatEvent;
+import com.linger.module.toolhub.chat.dto.ChatMessageType;
+import com.linger.module.toolhub.chat.dto.ChatSendRequest;
 import com.linger.module.util.JsonUtils;
 import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -10,9 +12,6 @@ import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
-
-import java.util.LinkedHashMap;
-import java.util.Map;
 
 @Component
 @AllArgsConstructor
@@ -25,18 +24,18 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     public void afterConnectionEstablished(WebSocketSession session) {
         String channel = attribute(session, "channel");
         chatService.connect(channel, session);
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("type", "connected");
-        payload.put("channel", channel);
-        chatService.send(session, payload);
+        chatService.send(session, ChatEvent.connected(channel));
     }
 
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) {
         try {
-            Map<String, Object> payload = JsonUtils.parseObject(message.getPayload(),
-                    new TypeReference<Map<String, Object>>() { });
-            String content = payload.get("content") == null ? "" : String.valueOf(payload.get("content")).trim();
+            ChatSendRequest payload = JsonUtils.parseObject(message.getPayload(), ChatSendRequest.class);
+            if (payload.getType() != null && payload.getType() != ChatMessageType.MESSAGE) {
+                sendError(session, "不支持的消息类型");
+                return;
+            }
+            String content = payload.getContent() == null ? "" : payload.getContent().trim();
             if (content.isEmpty()) {
                 sendError(session, "消息不能为空");
                 return;
@@ -60,10 +59,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     }
 
     private void sendError(WebSocketSession session, String message) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("type", "error");
-        payload.put("message", message);
-        chatService.send(session, payload);
+        chatService.send(session, ChatEvent.error(message));
     }
 
     private String attribute(WebSocketSession session, String name) {

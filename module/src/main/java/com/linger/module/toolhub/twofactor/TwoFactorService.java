@@ -1,10 +1,15 @@
 package com.linger.module.toolhub.twofactor;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.linger.module.toolhub.twofactor.dto.TwoFactorAccountRequest;
-import com.linger.module.toolhub.twofactor.dto.TwoFactorImportRequest;
-import com.linger.module.totp.TotpNative;
 import com.linger.module.exception.BusinessException;
+import com.linger.module.toolhub.twofactor.dto.TwoFactorAccountResponse;
+import com.linger.module.toolhub.twofactor.dto.TwoFactorAccountRequest;
+import com.linger.module.toolhub.twofactor.dto.TwoFactorExportResponse;
+import com.linger.module.toolhub.twofactor.dto.TwoFactorImportRequest;
+import com.linger.module.toolhub.twofactor.dto.TwoFactorImportResponse;
+import com.linger.module.toolhub.twofactor.model.TotpAlgorithm;
+import com.linger.module.toolhub.twofactor.model.TwoFactorAccount;
+import com.linger.module.totp.TotpNative;
 import com.linger.module.util.JsonUtils;
 import lombok.AllArgsConstructor;
 import org.redisson.api.RBucket;
@@ -39,26 +44,26 @@ public class TwoFactorService {
     private final RedissonClient redissonClient;
     private final TwoFactorCrypto crypto;
 
-    public List<Map<String, Object>> list(String userId, boolean includeSecret) {
+    public List<TwoFactorAccountResponse> list(String userId, boolean includeSecret) {
         long now = System.currentTimeMillis() / 1000L;
-        List<Map<String, Object>> result = new ArrayList<>();
-        for (Map<String, Object> account : load(userId)) {
+        List<TwoFactorAccountResponse> result = new ArrayList<>();
+        for (TwoFactorAccount account : load(userId)) {
             result.add(view(account, now, includeSecret));
         }
         return result;
     }
 
-    public Map<String, Object> get(String userId, String accountId) {
-        for (Map<String, Object> account : load(userId)) {
-            if (accountId.equals(string(account.get("id")))) return view(account, now(), true);
+    public TwoFactorAccountResponse get(String userId, String accountId) {
+        for (TwoFactorAccount account : load(userId)) {
+            if (accountId.equals(account.getId())) return view(account, now(), true);
         }
         throw BusinessException.notFound("账号不存在");
     }
 
-    public Map<String, Object> create(String userId, TwoFactorAccountRequest request) {
-        Map<String, Object> account = normalize(request.toMap(), null);
+    public TwoFactorAccountResponse create(String userId, TwoFactorAccountRequest request) {
+        TwoFactorAccount account = normalize(request, null);
         locked(userId, () -> {
-            List<Map<String, Object>> accounts = load(userId);
+            List<TwoFactorAccount> accounts = load(userId);
             accounts.add(0, account);
             save(userId, accounts);
             return null;
@@ -66,16 +71,14 @@ public class TwoFactorService {
         return view(account, now(), true);
     }
 
-    public Map<String, Object> update(String userId, String accountId, TwoFactorAccountRequest request) {
+    public TwoFactorAccountResponse update(String userId, String accountId, TwoFactorAccountRequest request) {
         return locked(userId, () -> {
-            List<Map<String, Object>> accounts = load(userId);
+            List<TwoFactorAccount> accounts = load(userId);
             for (int index = 0; index < accounts.size(); index++) {
-                Map<String, Object> current = accounts.get(index);
-                if (accountId.equals(string(current.get("id")))) {
-                    Map<String, Object> merged = new LinkedHashMap<>(current);
-                    merged.putAll(request.toMap());
-                    Map<String, Object> next = normalize(merged, accountId);
-                    next.put("createdAt", current.get("createdAt"));
+                TwoFactorAccount current = accounts.get(index);
+                if (accountId.equals(current.getId())) {
+                    TwoFactorAccount next = normalize(request, current);
+                    next.setCreatedAt(current.getCreatedAt());
                     accounts.set(index, next);
                     save(userId, accounts);
                     return view(next, now(), true);
@@ -87,81 +90,72 @@ public class TwoFactorService {
 
     public void delete(String userId, String accountId) {
         locked(userId, () -> {
-            List<Map<String, Object>> accounts = load(userId);
-            boolean removed = accounts.removeIf(item -> accountId.equals(string(item.get("id"))));
+            List<TwoFactorAccount> accounts = load(userId);
+            boolean removed = accounts.removeIf(item -> accountId.equals(item.getId()));
             if (!removed) throw BusinessException.notFound("账号不存在");
             save(userId, accounts);
             return null;
         });
     }
 
-    public Map<String, Object> importAccounts(String userId, TwoFactorImportRequest request) {
-        List<Map<String, Object>> parsed = new ArrayList<>();
+    public TwoFactorImportResponse importAccounts(String userId, TwoFactorImportRequest request) {
+        List<TwoFactorAccount> parsed = new ArrayList<>();
         String text = request.getText();
         if (text != null && !text.trim().isEmpty()) parsed.addAll(parseImportText(text));
         if (request.getItems() != null) {
             for (TwoFactorAccountRequest item : request.getItems()) {
-                if (item != null) parsed.add(normalize(item.toMap(), null));
+                if (item != null) parsed.add(normalize(item, null));
             }
         }
         if (parsed.isEmpty()) throw BusinessException.badRequest("没有可导入的账号");
 
-        List<Map<String, Object>> next = locked(userId, () -> {
-            List<Map<String, Object>> updated = "replace".equals(request.getMergeMode())
+        List<TwoFactorAccount> next = locked(userId, () -> {
+            List<TwoFactorAccount> updated = "replace".equals(request.getMergeMode())
                     ? new ArrayList<>() : load(userId);
             Set<String> signatures = new LinkedHashSet<>();
-            for (Map<String, Object> item : updated) signatures.add(signature(item));
-            for (Map<String, Object> item : parsed) {
+            for (TwoFactorAccount item : updated) signatures.add(signature(item));
+            for (TwoFactorAccount item : parsed) {
                 if (signatures.add(signature(item))) updated.add(item);
             }
             save(userId, updated);
             return updated;
         });
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("imported", parsed.size());
-        result.put("total", next.size());
-        List<Map<String, Object>> views = new ArrayList<>();
-        for (Map<String, Object> item : parsed) views.add(view(item, now(), true));
-        result.put("items", views);
-        return result;
+        List<TwoFactorAccountResponse> views = new ArrayList<>();
+        for (TwoFactorAccount item : parsed) views.add(view(item, now(), true));
+        return new TwoFactorImportResponse(parsed.size(), next.size(), views);
     }
 
-    public Map<String, Object> export(String userId, String format) {
-        List<Map<String, Object>> accounts = load(userId);
-        Map<String, Object> result = new LinkedHashMap<>();
+    public TwoFactorExportResponse<?> export(String userId, String format) {
+        List<TwoFactorAccount> accounts = load(userId);
         if ("otpauth".equalsIgnoreCase(format)) {
             List<String> lines = new ArrayList<>();
-            for (Map<String, Object> account : accounts) lines.add(buildUri(account));
-            result.put("format", "otpauth");
-            result.put("content", String.join("\n", lines));
-            return result;
+            for (TwoFactorAccount account : accounts) lines.add(buildUri(account));
+            return new TwoFactorExportResponse<>("otpauth", String.join("\n", lines));
         }
         if (!"json".equalsIgnoreCase(format)) throw BusinessException.badRequest("不支持的导出格式");
-        List<Map<String, Object>> views = new ArrayList<>();
-        for (Map<String, Object> account : accounts) views.add(view(account, now(), true));
-        result.put("format", "json");
-        result.put("content", views);
-        return result;
+        List<TwoFactorAccountResponse> views = new ArrayList<>();
+        for (TwoFactorAccount account : accounts) views.add(view(account, now(), true));
+        return new TwoFactorExportResponse<>("json", views);
     }
 
-    private List<Map<String, Object>> parseImportText(String raw) {
+    private List<TwoFactorAccount> parseImportText(String raw) {
         try {
             String text = raw.trim();
             if (text.startsWith("[")) {
-                List<Map<String, Object>> items = JsonUtils.parseObject(text,
-                        new TypeReference<List<Map<String, Object>>>() { });
-                List<Map<String, Object>> result = new ArrayList<>();
-                for (Map<String, Object> item : items) result.add(normalize(item, null));
+                List<TwoFactorAccountRequest> items = JsonUtils.parseObject(text,
+                        new TypeReference<List<TwoFactorAccountRequest>>() { });
+                List<TwoFactorAccount> result = new ArrayList<>();
+                for (TwoFactorAccountRequest item : items) result.add(normalize(item, null));
                 return result;
             }
-            List<Map<String, Object>> result = new ArrayList<>();
+            List<TwoFactorAccount> result = new ArrayList<>();
             for (String line : text.split("\\r?\\n")) {
                 if (line.trim().isEmpty()) continue;
                 if (line.trim().startsWith("otpauth-migration://")) {
                     result.addAll(parseMigrationUri(line.trim()));
                 } else {
-                    Map<String, Object> payload = new LinkedHashMap<>();
-                    payload.put("otpauthUri", line.trim());
+                    TwoFactorAccountRequest payload = new TwoFactorAccountRequest();
+                    payload.setOtpauthUri(line.trim());
                     result.add(normalize(payload, null));
                 }
             }
@@ -173,47 +167,63 @@ public class TwoFactorService {
         }
     }
 
-    private Map<String, Object> normalize(Map<String, Object> payload, String existingId) {
-        Map<String, Object> source = payload;
-        String uri = string(payload.get("otpauthUri"));
+    private TwoFactorAccount normalize(TwoFactorAccountRequest payload, TwoFactorAccount current) {
+        TwoFactorAccountRequest source = merge(current, payload);
+        String uri = payload.getOtpauthUri();
         if (uri != null && !uri.trim().isEmpty()) {
             if (uri.startsWith("otpauth-migration://")) {
-                List<Map<String, Object>> items = parseMigrationUri(uri);
+                List<TwoFactorAccount> items = parseMigrationUri(uri);
                 if (items.size() != 1) throw BusinessException.badRequest("Google 导出二维码包含多个账号，请使用导入功能");
-                source = items.get(0);
+                return withIdentity(items.get(0), current);
             } else {
                 source = parseUri(uri);
             }
         }
-        String secret = normalizeSecret(string(source.get("secret")));
-        String issuer = defaultString(string(source.get("issuer")), "Tool Hub");
-        String accountName = defaultString(string(source.get("accountName")), string(source.get("account_name")));
-        accountName = defaultString(accountName, "");
-        String label = defaultString(string(source.get("label")), accountName.isEmpty() ? issuer : issuer + " (" + accountName + ")");
-        String algorithm = defaultString(string(source.get("algorithm")), "SHA1").toUpperCase(Locale.ROOT).replace("-", "");
-        if (!java.util.Arrays.asList("SHA1", "SHA256", "SHA512").contains(algorithm)) {
-            throw BusinessException.badRequest("仅支持 SHA1 / SHA256 / SHA512");
-        }
-        int digits = integer(source.get("digits"), 6);
+        String secret = normalizeSecret(source.getSecret());
+        String issuer = defaultString(source.getIssuer(), "Tool Hub");
+        String accountName = defaultString(source.getAccountName(), "");
+        String label = defaultString(source.getLabel(), accountName.isEmpty() ? issuer : issuer + " (" + accountName + ")");
+        TotpAlgorithm algorithm = source.getAlgorithm() == null ? TotpAlgorithm.SHA1 : source.getAlgorithm();
+        int digits = defaultInteger(source.getDigits(), 6);
         if (digits != 6 && digits != 8) throw BusinessException.badRequest("digits 仅支持 6 或 8");
-        int period = integer(source.get("period"), 30);
+        int period = defaultInteger(source.getPeriod(), 30);
         if (period <= 0) throw BusinessException.badRequest("period 必须大于 0");
         String now = OffsetDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
-        Map<String, Object> account = new LinkedHashMap<>();
-        account.put("id", existingId == null ? "totp_" + UUID.randomUUID().toString().replace("-", "").substring(0, 10) : existingId);
-        account.put("label", label);
-        account.put("issuer", issuer);
-        account.put("accountName", accountName);
-        account.put("secret", secret);
-        account.put("digits", digits);
-        account.put("period", period);
-        account.put("algorithm", algorithm);
-        account.put("createdAt", now);
-        account.put("updatedAt", now);
+        return new TwoFactorAccount(
+                current == null ? newAccountId() : current.getId(),
+                label,
+                issuer,
+                accountName,
+                secret,
+                digits,
+                period,
+                algorithm,
+                current == null ? now : current.getCreatedAt(),
+                now);
+    }
+
+    private TwoFactorAccountRequest merge(TwoFactorAccount current, TwoFactorAccountRequest request) {
+        if (current == null) return request;
+        TwoFactorAccountRequest merged = new TwoFactorAccountRequest();
+        merged.setLabel(request.getLabel() == null ? current.getLabel() : request.getLabel());
+        merged.setIssuer(request.getIssuer() == null ? current.getIssuer() : request.getIssuer());
+        merged.setAccountName(request.getAccountName() == null ? current.getAccountName() : request.getAccountName());
+        merged.setSecret(request.getSecret() == null ? current.getSecret() : request.getSecret());
+        merged.setDigits(request.getDigits() == null ? current.getDigits() : request.getDigits());
+        merged.setPeriod(request.getPeriod() == null ? current.getPeriod() : request.getPeriod());
+        merged.setAlgorithm(request.getAlgorithm() == null ? current.getAlgorithm() : request.getAlgorithm());
+        merged.setOtpauthUri(request.getOtpauthUri());
+        return merged;
+    }
+
+    private TwoFactorAccount withIdentity(TwoFactorAccount account, TwoFactorAccount current) {
+        if (current == null) return account;
+        account.setId(current.getId());
+        account.setCreatedAt(current.getCreatedAt());
         return account;
     }
 
-    private Map<String, Object> parseUri(String value) {
+    private TwoFactorAccountRequest parseUri(String value) {
         try {
             URI uri = URI.create(value.trim());
             if (!"otpauth".equalsIgnoreCase(uri.getScheme()) || !"totp".equalsIgnoreCase(uri.getHost())) {
@@ -228,14 +238,16 @@ public class TwoFactorService {
                 accountName = label.substring(separator + 1).trim();
             }
             Map<String, String> query = query(uri.getRawQuery());
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("label", label);
-            result.put("issuer", defaultString(query.get("issuer"), issuerFromLabel));
-            result.put("accountName", accountName);
-            result.put("secret", query.get("secret"));
-            result.put("digits", query.get("digits"));
-            result.put("period", query.get("period"));
-            result.put("algorithm", query.get("algorithm"));
+            TwoFactorAccountRequest result = new TwoFactorAccountRequest();
+            result.setLabel(label);
+            result.setIssuer(defaultString(query.get("issuer"), issuerFromLabel));
+            result.setAccountName(accountName);
+            result.setSecret(query.get("secret"));
+            result.setDigits(parseInteger(query.get("digits")));
+            result.setPeriod(parseInteger(query.get("period")));
+            if (query.get("algorithm") != null && !query.get("algorithm").trim().isEmpty()) {
+                result.setAlgorithm(TotpAlgorithm.fromValue(query.get("algorithm")));
+            }
             return result;
         } catch (BusinessException exception) {
             throw exception;
@@ -244,7 +256,7 @@ public class TwoFactorService {
         }
     }
 
-    private List<Map<String, Object>> parseMigrationUri(String value) {
+    private List<TwoFactorAccount> parseMigrationUri(String value) {
         try {
             URI uri = URI.create(value);
             if (!"otpauth-migration".equalsIgnoreCase(uri.getScheme()) || !"offline".equalsIgnoreCase(uri.getHost())) {
@@ -254,10 +266,10 @@ public class TwoFactorService {
             if (data == null) throw BusinessException.badRequest("Google 导出二维码缺少 data 参数");
             byte[] bytes = Base64.getUrlDecoder().decode(padBase64(data));
             List<ProtoField> migration = proto(bytes);
-            List<Map<String, Object>> result = new ArrayList<>();
+            List<TwoFactorAccount> result = new ArrayList<>();
             for (ProtoField field : migration) {
                 if (field.number == 1 && field.bytes != null) {
-                    Map<String, Object> item = migrationAccount(proto(field.bytes));
+                    TwoFactorAccountRequest item = migrationAccount(proto(field.bytes));
                     if (item != null) result.add(normalize(item, null));
                 }
             }
@@ -270,19 +282,20 @@ public class TwoFactorService {
         }
     }
 
-    private Map<String, Object> migrationAccount(List<ProtoField> fields) {
-        Map<String, Object> result = new LinkedHashMap<>();
+    private TwoFactorAccountRequest migrationAccount(List<ProtoField> fields) {
+        TwoFactorAccountRequest result = new TwoFactorAccountRequest();
         int type = 2;
         for (ProtoField field : fields) {
-            if (field.number == 1 && field.bytes != null) result.put("secret", base32(field.bytes));
-            if (field.number == 2 && field.bytes != null) result.put("accountName", new String(field.bytes, StandardCharsets.UTF_8));
-            if (field.number == 3 && field.bytes != null) result.put("issuer", new String(field.bytes, StandardCharsets.UTF_8));
-            if (field.number == 4) result.put("algorithm", field.value == 2 ? "SHA256" : field.value == 3 ? "SHA512" : "SHA1");
-            if (field.number == 5) result.put("digits", field.value == 2 ? 8 : 6);
+            if (field.number == 1 && field.bytes != null) result.setSecret(base32(field.bytes));
+            if (field.number == 2 && field.bytes != null) result.setAccountName(new String(field.bytes, StandardCharsets.UTF_8));
+            if (field.number == 3 && field.bytes != null) result.setIssuer(new String(field.bytes, StandardCharsets.UTF_8));
+            if (field.number == 4) result.setAlgorithm(field.value == 2
+                    ? TotpAlgorithm.SHA256 : field.value == 3 ? TotpAlgorithm.SHA512 : TotpAlgorithm.SHA1);
+            if (field.number == 5) result.setDigits(field.value == 2 ? 8 : 6);
             if (field.number == 6) type = (int) field.value;
         }
         if (type != 2) return null;
-        result.put("period", 30);
+        result.setPeriod(30);
         return result;
     }
 
@@ -317,46 +330,52 @@ public class TwoFactorService {
         throw BusinessException.badRequest("Google 导出数据损坏");
     }
 
-    private Map<String, Object> view(Map<String, Object> account, long now, boolean includeSecret) {
-        int period = integer(account.get("period"), 30);
-        int digits = integer(account.get("digits"), 6);
-        String secret = string(account.get("secret"));
+    private TwoFactorAccountResponse view(TwoFactorAccount account, long now, boolean includeSecret) {
+        int period = defaultInteger(account.getPeriod(), 30);
+        int digits = defaultInteger(account.getDigits(), 6);
+        String secret = account.getSecret();
         String code;
         try {
-            code = TotpNative.generateTotpAtTime(secret, now / period, string(account.get("algorithm")), digits);
+            code = TotpNative.generateTotpAtTime(secret, now / period, account.getAlgorithm().getValue(), digits);
         } catch (Exception exception) {
             throw new IllegalStateException("TOTP 生成失败", exception);
         }
-        Map<String, Object> result = new LinkedHashMap<>(account);
-        result.remove("secret");
-        result.put("code", code);
-        result.put("secondsRemaining", period - now % period);
-        result.put("secretMasked", mask(secret));
-        if (includeSecret) {
-            result.put("secret", secret);
-            result.put("otpauthUri", buildUri(account));
-        }
-        return result;
+        return TwoFactorAccountResponse.builder()
+                .id(account.getId())
+                .label(account.getLabel())
+                .issuer(account.getIssuer())
+                .accountName(account.getAccountName())
+                .digits(digits)
+                .period(period)
+                .algorithm(account.getAlgorithm())
+                .createdAt(account.getCreatedAt())
+                .updatedAt(account.getUpdatedAt())
+                .code(code)
+                .secondsRemaining(period - now % period)
+                .secretMasked(mask(secret))
+                .secret(includeSecret ? secret : null)
+                .otpauthUri(includeSecret ? buildUri(account) : null)
+                .build();
     }
 
-    private String buildUri(Map<String, Object> account) {
-        String issuer = string(account.get("issuer"));
-        String accountName = string(account.get("accountName"));
-        String label = accountName == null || accountName.isEmpty() ? string(account.get("label")) : issuer + ":" + accountName;
-        return "otpauth://totp/" + encode(label) + "?secret=" + string(account.get("secret")) +
-                "&issuer=" + encode(issuer) + "&algorithm=" + string(account.get("algorithm")) +
-                "&digits=" + account.get("digits") + "&period=" + account.get("period");
+    private String buildUri(TwoFactorAccount account) {
+        String accountName = account.getAccountName();
+        String label = accountName == null || accountName.isEmpty()
+                ? account.getLabel() : account.getIssuer() + ":" + accountName;
+        return "otpauth://totp/" + encode(label) + "?secret=" + account.getSecret() +
+                "&issuer=" + encode(account.getIssuer()) + "&algorithm=" + account.getAlgorithm().getValue() +
+                "&digits=" + account.getDigits() + "&period=" + account.getPeriod();
     }
 
-    private List<Map<String, Object>> load(String userId) {
+    private List<TwoFactorAccount> load(String userId) {
         RBucket<String> bucket = redissonClient.getBucket(key(userId), StringCodec.INSTANCE);
         String value = bucket.get();
         if (value == null || value.isEmpty()) return new ArrayList<>();
         try {
             boolean legacyPlainText = !value.startsWith("v1:");
             String json = legacyPlainText ? value : crypto.decrypt(value);
-            List<Map<String, Object>> accounts = JsonUtils.parseObject(json,
-                    new TypeReference<List<Map<String, Object>>>() { });
+            List<TwoFactorAccount> accounts = JsonUtils.parseObject(json,
+                    new TypeReference<List<TwoFactorAccount>>() { });
             if (legacyPlainText) {
                 // 首次由 Java 读取 Python 遗留明文时原位升级，后续只保存 AES-GCM 密文。
                 bucket.compareAndSet(value, crypto.encrypt(json));
@@ -369,7 +388,7 @@ public class TwoFactorService {
         }
     }
 
-    private void save(String userId, List<Map<String, Object>> accounts) {
+    private void save(String userId, List<TwoFactorAccount> accounts) {
         try {
             String json = JsonUtils.toJsonString(accounts);
             redissonClient.getBucket(key(userId), StringCodec.INSTANCE).set(crypto.encrypt(json));
@@ -434,9 +453,9 @@ public class TwoFactorService {
         return value + String.join("", Collections.nCopies(padding, "="));
     }
 
-    private String signature(Map<String, Object> item) {
-        return string(item.get("issuer")) + "|" + string(item.get("accountName")) + "|" + string(item.get("secret")) +
-                "|" + item.get("digits") + "|" + item.get("period") + "|" + item.get("algorithm");
+    private String signature(TwoFactorAccount item) {
+        return item.getIssuer() + "|" + item.getAccountName() + "|" + item.getSecret() +
+                "|" + item.getDigits() + "|" + item.getPeriod() + "|" + item.getAlgorithm().getValue();
     }
 
     private String mask(String secret) {
@@ -444,17 +463,26 @@ public class TwoFactorService {
         return secret.substring(0, 4) + String.join("", Collections.nCopies(secret.length() - 8, "*")) + secret.substring(secret.length() - 4);
     }
 
-    private int integer(Object value, int defaultValue) {
-        if (value == null || string(value).trim().isEmpty()) return defaultValue;
-        try { return Integer.parseInt(string(value)); }
-        catch (NumberFormatException exception) { throw BusinessException.badRequest("数字参数格式不正确"); }
+    private int defaultInteger(Integer value, int defaultValue) {
+        return value == null ? defaultValue : value;
+    }
+
+    private Integer parseInteger(String value) {
+        if (value == null || value.trim().isEmpty()) return null;
+        try {
+            return Integer.valueOf(value);
+        } catch (NumberFormatException exception) {
+            throw BusinessException.badRequest("数字参数格式不正确");
+        }
     }
 
     private String defaultString(String value, String fallback) {
         return value == null || value.trim().isEmpty() ? fallback : value.trim();
     }
 
-    private String string(Object value) { return value == null ? null : String.valueOf(value); }
+    private String newAccountId() {
+        return "totp_" + UUID.randomUUID().toString().replace("-", "").substring(0, 10);
+    }
     private String encode(String value) {
         try {
             return URLEncoder.encode(value == null ? "" : value, StandardCharsets.UTF_8.name()).replace("+", "%20");

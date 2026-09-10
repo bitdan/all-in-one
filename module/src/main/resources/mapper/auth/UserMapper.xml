@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.linger.module.toolhub.auth.mapper.UserMapper">
+
+    <resultMap id="userResultMap" type="com.linger.module.toolhub.auth.UserRecord">
+        <id property="userId" column="user_id"/>
+        <result property="username" column="username"/>
+        <result property="passwordHash" column="password_hash"/>
+        <result property="email" column="email"/>
+        <result property="avatar" column="avatar"/>
+        <result property="status" column="status"
+                typeHandler="com.baomidou.mybatisplus.core.handlers.MybatisEnumTypeHandler"/>
+        <result property="roles" column="roles"
+                typeHandler="com.linger.module.toolhub.auth.handler.StringListJsonTypeHandler"/>
+        <result property="permissions" column="permissions"
+                typeHandler="com.linger.module.toolhub.auth.handler.StringListJsonTypeHandler"/>
+        <result property="lastLoginAt" column="last_login_at"/>
+        <result property="createdBy" column="created_by"/>
+        <result property="updatedBy" column="updated_by"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <select id="selectUserPage" resultMap="userResultMap">
+        SELECT user_id,
+               username,
+               email,
+               avatar,
+               status,
+               roles,
+               permissions,
+               created_at,
+               updated_at
+        FROM sys_users
+        WHERE status != 'deleted'
+        <if test="query.keyword != null and query.keyword.trim() != ''">
+            AND (username ILIKE '%' || BTRIM(#{query.keyword}) || '%'
+                OR email ILIKE '%' || BTRIM(#{query.keyword}) || '%')
+        </if>
+        ORDER BY created_at DESC, user_id DESC
+    </select>
+
+    <select id="selectStatusSummary" resultType="com.linger.module.toolhub.auth.dto.UserStatusSummary">
+        SELECT COUNT(*) FILTER (WHERE status = 'active') AS total_active,
+               COUNT(*) FILTER (WHERE status = 'disabled') AS total_disabled,
+               COUNT(*) FILTER (WHERE status = 'frozen') AS total_frozen
+        FROM sys_users
+        WHERE status != 'deleted'
+        <if test="keyword != null and keyword.trim() != ''">
+            AND (username ILIKE '%' || BTRIM(#{keyword}) || '%'
+                OR email ILIKE '%' || BTRIM(#{keyword}) || '%')
+        </if>
+    </select>
+</mapper>

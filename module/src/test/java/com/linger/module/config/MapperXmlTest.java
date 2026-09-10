@@ -8,6 +8,7 @@ import com.linger.module.groupbuy.transaction.mapper.GroupBuyInventoryLedgerMapp
 import com.linger.module.groupbuy.transaction.mapper.GroupBuyMemberMapper;
 import com.linger.module.groupbuy.transaction.mapper.GroupBuyOrderMapper;
 import com.linger.module.groupbuy.transaction.mapper.GroupBuyOutboxEventMapper;
+import com.linger.module.toolhub.auth.mapper.UserMapper;
 import com.linger.module.toolhub.post.mapper.PostMapper;
 import com.linger.module.toolhub.post.mapper.PostTagMapper;
 import org.apache.ibatis.builder.xml.XMLMapperBuilder;
@@ -25,6 +26,7 @@ class MapperXmlTest {
     void shouldParseXmlAndBindEveryCustomMapperMethod() throws Exception {
         assertMapperXml("mapper/post/PostMapper.xml", PostMapper.class);
         assertMapperXml("mapper/post/PostTagMapper.xml", PostTagMapper.class);
+        assertMapperXml("mapper/auth/UserMapper.xml", UserMapper.class);
         assertMapperXml("mapper/groupbuy/GroupBuyActivityMapper.xml", GroupBuyActivityMapper.class);
         assertMapperXml("mapper/groupbuy/GroupBuyDelayTaskMapper.xml", GroupBuyDelayTaskMapper.class);
         assertMapperXml("mapper/groupbuy/GroupBuyGroupMapper.xml", GroupBuyGroupMapper.class);

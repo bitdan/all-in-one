@@ -1,6 +1,7 @@
 package com.linger.module.toolhub.auth;
 
 import com.linger.module.exception.BusinessException;
+import com.linger.module.toolhub.auth.dto.CaptchaResponse;
 import com.linger.module.toolhub.config.ToolHubProperties;
 import lombok.RequiredArgsConstructor;
 import org.redisson.api.RBucket;
@@ -17,8 +18,6 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.security.SecureRandom;
 import java.util.Base64;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -32,17 +31,13 @@ public class CaptchaService {
     private final ToolHubProperties properties;
     private final SecureRandom random = new SecureRandom();
 
-    public Map<String, Object> create() {
+    public CaptchaResponse create() {
         String code = randomCode();
         String uuid = UUID.randomUUID().toString();
         RBucket<String> bucket = redissonClient.getBucket(key(uuid), StringCodec.INSTANCE);
         bucket.set(code, properties.getCaptchaTtlSeconds(), TimeUnit.SECONDS);
 
-        Map<String, Object> data = new LinkedHashMap<>();
-        data.put("captchaEnabled", true);
-        data.put("uuid", uuid);
-        data.put("img", render(code));
-        return data;
+        return new CaptchaResponse(true, uuid, render(code));
     }
 
     public void validate(String uuid, String code) {

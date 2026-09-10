@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.linger.module.common.persistence.BaseAuditEntity;
 import com.linger.module.toolhub.auth.handler.StringListJsonTypeHandler;
+import com.linger.module.toolhub.auth.model.UserStatus;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -23,7 +24,7 @@ public class UserRecord extends BaseAuditEntity {
     private String passwordHash;
     private String email;
     private String avatar;
-    private String status;
+    private UserStatus status;
     @TableField(typeHandler = StringListJsonTypeHandler.class)
     private List<String> roles = new ArrayList<>();
     @TableField(typeHandler = StringListJsonTypeHandler.class)

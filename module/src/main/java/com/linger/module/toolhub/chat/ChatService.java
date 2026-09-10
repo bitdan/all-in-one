@@ -1,7 +1,9 @@
 package com.linger.module.toolhub.chat;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.linger.module.toolhub.auth.UserRecord;
+import com.linger.module.toolhub.chat.dto.ChatEvent;
+import com.linger.module.toolhub.chat.dto.ChatMessage;
+import com.linger.module.toolhub.chat.dto.ChatMessageType;
 import com.linger.module.toolhub.config.ToolHubProperties;
 import com.linger.module.util.JsonUtils;
 import lombok.RequiredArgsConstructor;
@@ -15,7 +17,6 @@ import org.springframework.web.socket.WebSocketSession;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -32,15 +33,15 @@ public class ChatService {
     private final Map<String, Set<WebSocketSession>> sessions = new ConcurrentHashMap<>();
     private final Set<String> subscribedChannels = ConcurrentHashMap.newKeySet();
 
-    public List<Map<String, Object>> history(String channel, int limit) {
+    public List<ChatMessage> history(String channel, int limit) {
         int safeLimit = Math.max(1, Math.min(limit, properties.getChatHistoryLimit()));
         RList<String> list = redissonClient.getList(historyKey(channel), StringCodec.INSTANCE);
         int size = list.size();
         if (size == 0) return Collections.emptyList();
-        List<Map<String, Object>> result = new ArrayList<>();
+        List<ChatMessage> result = new ArrayList<>();
         for (String value : list.range(Math.max(0, size - safeLimit), size - 1)) {
             try {
-                result.add(JsonUtils.parseObject(value, new TypeReference<Map<String, Object>>() { }));
+                result.add(JsonUtils.parseObject(value, ChatMessage.class));
             } catch (Exception ignored) {
                 // Skip malformed legacy entries without breaking the entire chat history.
             }
@@ -61,14 +62,14 @@ public class ChatService {
     }
 
     public void publish(String channel, UserRecord user, String content) {
-        Map<String, Object> message = new LinkedHashMap<>();
-        message.put("id", UUID.randomUUID().toString());
-        message.put("channel", channel);
-        message.put("type", "message");
-        message.put("user_id", user.getUserId());
-        message.put("username", user.getUsername());
-        message.put("content", content);
-        message.put("created_at", System.currentTimeMillis() / 1000.0D);
+        ChatMessage message = new ChatMessage(
+                UUID.randomUUID().toString(),
+                channel,
+                ChatMessageType.MESSAGE,
+                user.getUserId(),
+                user.getUsername(),
+                content,
+                System.currentTimeMillis() / 1000.0D);
         try {
             String serializedMessage = JsonUtils.toJsonString(message);
             RList<String> history = redissonClient.getList(historyKey(channel), StringCodec.INSTANCE);
@@ -78,18 +79,14 @@ public class ChatService {
             if (properties.getChatHistoryTtlSeconds() > 0) {
                 history.expire(properties.getChatHistoryTtlSeconds(), TimeUnit.SECONDS);
             }
-            Map<String, Object> event = new LinkedHashMap<>();
-            event.put("type", "message");
-            event.put("channel", channel);
-            event.put("message", message);
             redissonClient.getTopic(topicKey(channel), StringCodec.INSTANCE)
-                    .publish(JsonUtils.toJsonString(event));
+                    .publish(JsonUtils.toJsonString(ChatEvent.message(channel, message)));
         } catch (Exception exception) {
             throw new IllegalStateException("聊天消息发布失败", exception);
         }
     }
 
-    public void send(WebSocketSession session, Map<String, Object> payload) {
+    public void send(WebSocketSession session, ChatEvent<?> payload) {
         try {
             if (session.isOpen()) session.sendMessage(new TextMessage(JsonUtils.toJsonString(payload)));
         } catch (Exception ignored) {

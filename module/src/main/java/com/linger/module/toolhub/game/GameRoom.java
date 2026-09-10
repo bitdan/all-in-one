@@ -3,6 +3,8 @@ package com.linger.module.toolhub.game;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
+import com.linger.module.toolhub.game.model.GameStatus;
+import com.linger.module.toolhub.game.model.PlayerColor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -25,7 +27,7 @@ public class GameRoom {
     public static class Player {
         private String userId;
         private String username;
-        private String color;
+        private PlayerColor color;
         @JsonProperty("is_ready")
         private boolean ready;
         @JsonProperty("is_online")
@@ -36,10 +38,10 @@ public class GameRoom {
     @NoArgsConstructor
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public static class GameState {
-        private String status;
+        private GameStatus status;
         private int[][] board;
-        private String currentPlayer;
-        private String winner;
+        private PlayerColor currentPlayer;
+        private PlayerColor winner;
         private Move lastMove;
         private List<Move> moves = new ArrayList<>();
         private int movesCount;
@@ -53,7 +55,7 @@ public class GameRoom {
     public static class Move {
         private int x;
         private int y;
-        private String color;
+        private PlayerColor color;
         private double timestamp;
     }
 }

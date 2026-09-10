@@ -3,6 +3,10 @@ package com.linger.module.toolhub.game;
 import com.linger.module.toolhub.auth.UserRecord;
 import com.linger.module.exception.BusinessException;
 import com.linger.module.toolhub.config.ToolHubProperties;
+import com.linger.module.toolhub.game.dto.GameEvent;
+import com.linger.module.toolhub.game.model.GameEventType;
+import com.linger.module.toolhub.game.model.GameStatus;
+import com.linger.module.toolhub.game.model.PlayerColor;
 import com.linger.module.util.JsonUtils;
 import lombok.RequiredArgsConstructor;
 import org.redisson.api.RBucket;
@@ -16,7 +20,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -41,11 +44,11 @@ public class GameService {
         double now = now();
         GameRoom room = new GameRoom();
         room.setRoomId(roomId);
-        room.setHost(player(user, "black"));
+        room.setHost(player(user, PlayerColor.BLACK));
         GameRoom.GameState state = new GameRoom.GameState();
-        state.setStatus("waiting");
+        state.setStatus(GameStatus.WAITING);
         state.setBoard(new int[15][15]);
-        state.setCurrentPlayer("black");
+        state.setCurrentPlayer(PlayerColor.BLACK);
         state.setCreatedAt(now);
         state.setUpdatedAt(now);
         room.setGameState(state);
@@ -60,20 +63,14 @@ public class GameService {
             if (existing != null && load(existing) != null) throw BusinessException.badRequest("您已在其他房间中，请先离开");
             GameRoom room = requiredRoom(roomId);
             if (room.getGuest() != null) throw BusinessException.badRequest("加入房间失败，房间不存在或已满");
-            room.setGuest(player(user, "white"));
-            room.getGameState().setStatus("playing");
+            room.setGuest(player(user, PlayerColor.WHITE));
+            room.getGameState().setStatus(GameStatus.PLAYING);
             room.getGameState().setUpdatedAt(now());
             save(room);
             playerRooms().put(user.getUserId(), roomId);
-            Map<String, Object> joined = new LinkedHashMap<>();
-            joined.put("player", room.getGuest());
-            publish(roomId, "player_joined", joined);
-            Map<String, Object> started = new LinkedHashMap<>();
-            started.put("current_player", "black");
-            started.put("host_color", "black");
-            started.put("guest_color", "white");
-            started.put("board", room.getGameState().getBoard());
-            publish(roomId, "game_started", started);
+            publish(roomId, GameEventType.PLAYER_JOINED, new GameEvent.PlayerJoinedData(room.getGuest()));
+            publish(roomId, GameEventType.GAME_STARTED, new GameEvent.GameStartedData(
+                    PlayerColor.BLACK, PlayerColor.BLACK, PlayerColor.WHITE, room.getGameState().getBoard()));
         });
     }
 
@@ -86,14 +83,12 @@ public class GameService {
                 playerRooms().remove(userId);
                 return;
             }
-            Map<String, Object> event = new LinkedHashMap<>();
-            event.put("user_id", userId);
-            publish(roomId, "player_left", event);
+            publish(roomId, GameEventType.PLAYER_LEFT, new GameEvent.PlayerLeftData(userId));
             if (room.getHost().getUserId().equals(userId)) {
                 deleteRoom(room);
             } else if (room.getGuest() != null && room.getGuest().getUserId().equals(userId)) {
                 room.setGuest(null);
-                room.getGameState().setStatus("waiting");
+                room.getGameState().setStatus(GameStatus.WAITING);
                 room.getGameState().setUpdatedAt(now());
                 playerRooms().remove(userId);
                 save(room);
@@ -105,12 +100,12 @@ public class GameService {
         withRoomLock(roomId, () -> {
             GameRoom room = requiredMembership(roomId, userId);
             GameRoom.GameState state = room.getGameState();
-            if (!"playing".equals(state.getStatus()) || x < 0 || x >= 15 || y < 0 || y >= 15 || state.getBoard()[y][x] != 0) {
+            if (state.getStatus() != GameStatus.PLAYING || x < 0 || x >= 15 || y < 0 || y >= 15 || state.getBoard()[y][x] != 0) {
                 throw BusinessException.badRequest("下棋失败，请检查位置和游戏状态");
             }
-            String color = playerColor(room, userId);
+            PlayerColor color = playerColor(room, userId);
             if (color == null || !color.equals(state.getCurrentPlayer())) throw BusinessException.badRequest("还未轮到您落子");
-            int colorValue = "black".equals(color) ? 1 : 2;
+            int colorValue = color.getBoardValue();
             state.getBoard()[y][x] = colorValue;
             GameRoom.Move move = new GameRoom.Move();
             move.setX(x);
@@ -121,20 +116,17 @@ public class GameService {
             state.setMovesCount(state.getMoves().size());
             state.setLastMove(move);
             state.setUpdatedAt(now());
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("move", move);
             if (winner(state.getBoard(), x, y, colorValue)) {
                 state.setWinner(color);
-                state.setStatus("finished");
-                data.put("winner", color);
+                state.setStatus(GameStatus.FINISHED);
                 save(room);
-                publish(roomId, "game_ended", data);
+                publish(roomId, GameEventType.GAME_ENDED,
+                        new GameEvent.MoveData(move, null, null, color));
             } else {
-                state.setCurrentPlayer("black".equals(color) ? "white" : "black");
-                data.put("current_player", state.getCurrentPlayer());
-                data.put("board", state.getBoard());
+                state.setCurrentPlayer(color.opposite());
                 save(room);
-                publish(roomId, "move_made", data);
+                publish(roomId, GameEventType.MOVE_MADE,
+                        new GameEvent.MoveData(move, state.getCurrentPlayer(), state.getBoard(), null));
             }
         });
     }
@@ -145,13 +137,11 @@ public class GameService {
             if (!room.getHost().getUserId().equals(userId) || room.getGuest() == null) {
                 throw BusinessException.badRequest("开始游戏失败，请检查权限和房间状态");
             }
-            room.getGameState().setStatus("playing");
+            room.getGameState().setStatus(GameStatus.PLAYING);
             room.getGameState().setUpdatedAt(now());
             save(room);
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("current_player", room.getGameState().getCurrentPlayer());
-            data.put("board", room.getGameState().getBoard());
-            publish(roomId, "game_started", data);
+            publish(roomId, GameEventType.GAME_STARTED, new GameEvent.GameStartedData(
+                    room.getGameState().getCurrentPlayer(), null, null, room.getGameState().getBoard()));
         });
     }
 
@@ -161,18 +151,16 @@ public class GameService {
             if (!room.getHost().getUserId().equals(userId)) throw BusinessException.badRequest("重新开始游戏失败，请检查权限");
             GameRoom.GameState state = room.getGameState();
             state.setBoard(new int[15][15]);
-            state.setCurrentPlayer("black");
+            state.setCurrentPlayer(PlayerColor.BLACK);
             state.setWinner(null);
             state.setLastMove(null);
             state.setMoves(new ArrayList<>());
             state.setMovesCount(0);
-            state.setStatus(room.getGuest() == null ? "waiting" : "playing");
+            state.setStatus(room.getGuest() == null ? GameStatus.WAITING : GameStatus.PLAYING);
             state.setUpdatedAt(now());
             save(room);
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("current_player", "black");
-            data.put("board", state.getBoard());
-            publish(roomId, "game_started", data);
+            publish(roomId, GameEventType.GAME_STARTED, new GameEvent.GameStartedData(
+                    PlayerColor.BLACK, null, null, state.getBoard()));
         });
     }
 
@@ -188,15 +176,15 @@ public class GameService {
         emitter.onCompletion(() -> removeEmitter(roomId, emitter));
         emitter.onTimeout(() -> removeEmitter(roomId, emitter));
         emitter.onError(error -> removeEmitter(roomId, emitter));
-        send(emitter, envelope("connected", roomId, new LinkedHashMap<>()));
-        send(emitter, envelope("room_state", roomId, room));
+        send(emitter, envelope(GameEventType.CONNECTED, roomId, null));
+        send(emitter, envelope(GameEventType.ROOM_STATE, roomId, room));
         return emitter;
     }
 
     @Scheduled(fixedDelay = 20000)
     public void heartbeat() {
         for (Map.Entry<String, Set<SseEmitter>> entry : emitters.entrySet()) {
-            Map<String, Object> payload = envelope("heartbeat", entry.getKey(), new LinkedHashMap<>());
+            GameEvent<Void> payload = envelope(GameEventType.HEARTBEAT, entry.getKey(), null);
             for (SseEmitter emitter : new ArrayList<>(entry.getValue())) send(emitter, payload);
         }
     }
@@ -208,15 +196,14 @@ public class GameService {
             Set<SseEmitter> roomEmitters = emitters.get(roomId);
             if (roomEmitters == null) return;
             try {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> event = JsonUtils.parseObject(payload, Map.class);
+                GameEvent<?> event = JsonUtils.parseObject(payload, GameEvent.class);
                 for (SseEmitter emitter : new ArrayList<>(roomEmitters)) send(emitter, event);
             } catch (Exception ignored) {
             }
         });
     }
 
-    private void publish(String roomId, String type, Object data) {
+    private <T> void publish(String roomId, GameEventType type, T data) {
         try {
             subscribe(roomId);
             redissonClient.getTopic(topicKey(roomId), StringCodec.INSTANCE)
@@ -226,16 +213,11 @@ public class GameService {
         }
     }
 
-    private Map<String, Object> envelope(String type, String roomId, Object data) {
-        Map<String, Object> event = new LinkedHashMap<>();
-        event.put("type", type);
-        event.put("room_id", roomId);
-        event.put("data", data);
-        event.put("timestamp", now());
-        return event;
+    private <T> GameEvent<T> envelope(GameEventType type, String roomId, T data) {
+        return new GameEvent<>(type, roomId, data, now());
     }
 
-    private void send(SseEmitter emitter, Map<String, Object> payload) {
+    private void send(SseEmitter emitter, GameEvent<?> payload) {
         try {
             emitter.send(SseEmitter.event().data(payload));
         } catch (Exception exception) {
@@ -249,7 +231,7 @@ public class GameService {
         if (roomEmitters != null) roomEmitters.remove(emitter);
     }
 
-    private GameRoom.Player player(UserRecord user, String color) {
+    private GameRoom.Player player(UserRecord user, PlayerColor color) {
         GameRoom.Player player = new GameRoom.Player();
         player.setUserId(user.getUserId());
         player.setUsername(user.getUsername());
@@ -273,7 +255,7 @@ public class GameService {
         return room;
     }
 
-    private String playerColor(GameRoom room, String userId) {
+    private PlayerColor playerColor(GameRoom room, String userId) {
         if (room.getHost().getUserId().equals(userId)) return room.getHost().getColor();
         if (room.getGuest() != null && room.getGuest().getUserId().equals(userId)) return room.getGuest().getColor();
         return null;
