@@ -11,7 +11,6 @@ import com.linger.module.groupbuy.transaction.entity.GroupBuyGroupEntity;
 import com.linger.module.groupbuy.transaction.entity.GroupBuyOrderEntity;
 import com.linger.module.groupbuy.transaction.service.GroupBuyTransactionApplicationService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -22,7 +21,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/groupbuy")
-@ConditionalOnProperty(prefix = "groupbuy.transaction", name = "enabled", havingValue = "true")
 public class GroupBuyTransactionController {
 
     private final GroupBuyTransactionApplicationService applicationService;
@@ -60,4 +58,3 @@ public class GroupBuyTransactionController {
         return GroupBuyApiResponse.success(applicationService.recordPayment(request));
     }
 }
-

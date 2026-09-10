@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS post_posts
     view_count    INTEGER      NOT NULL DEFAULT 0,
     like_count    INTEGER      NOT NULL DEFAULT 0,
     comment_count INTEGER      NOT NULL DEFAULT 0,
+    created_by VARCHAR(128) NOT NULL DEFAULT 'system',
+    updated_by VARCHAR(128) NOT NULL DEFAULT 'system',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -49,6 +51,8 @@ CREATE TABLE IF NOT EXISTS post_comments
     author_name VARCHAR(128) NOT NULL,
     content     TEXT         NOT NULL,
     status      VARCHAR(20)  NOT NULL DEFAULT 'published',
+    created_by VARCHAR(128) NOT NULL DEFAULT 'system',
+    updated_by VARCHAR(128) NOT NULL DEFAULT 'system',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -61,7 +65,10 @@ CREATE TABLE IF NOT EXISTS post_likes
     id BIGSERIAL PRIMARY KEY,
     post_id VARCHAR(64)  NOT NULL REFERENCES post_posts (id) ON DELETE CASCADE,
     user_id VARCHAR(128) NOT NULL,
+    created_by VARCHAR(128) NOT NULL DEFAULT 'system',
+    updated_by VARCHAR(128) NOT NULL DEFAULT 'system',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_post_likes_post_user UNIQUE (post_id, user_id)
 );
 
@@ -73,6 +80,10 @@ CREATE TABLE IF NOT EXISTS post_post_tags
     id BIGSERIAL PRIMARY KEY,
     post_id  VARCHAR(64) NOT NULL REFERENCES post_posts (id) ON DELETE CASCADE,
     tag_name VARCHAR(64) NOT NULL,
+    created_by VARCHAR(128) NOT NULL DEFAULT 'system',
+    updated_by VARCHAR(128) NOT NULL DEFAULT 'system',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_post_post_tags_post_tag UNIQUE (post_id, tag_name)
 );
 

@@ -8,7 +8,6 @@ import lombok.RequiredArgsConstructor;
 import org.redisson.api.RScript;
 import org.redisson.api.RedissonClient;
 import org.redisson.client.codec.StringCodec;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
@@ -24,7 +23,6 @@ import java.util.List;
  */
 @Service
 @RequiredArgsConstructor
-@ConditionalOnProperty(prefix = "groupbuy.transaction", name = "enabled", havingValue = "true")
 public class RedisGroupBuyAdmissionService {
 
     /** 活动发布脚本：仅在库存 key 不存在时初始化，重试不会覆盖已经售出的库存。 */

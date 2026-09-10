@@ -5,8 +5,9 @@ spring:
       repositories:
         enabled: false # 项目未使用到 Spring Data Redis 的 Repository，所以直接禁用，保证启动速度
   redis:
-    host: 192.168.9.188 # 地址
-    port: 6379 # 端口
-    database: 15 # 数据库索引
+    host: ${REDIS_HOST:192.168.9.188} # 地址
+    port: ${REDIS_PORT:6379} # 端口
+    password: ${REDIS_PASSWORD:}
+    database: ${REDIS_DATABASE:15} # 数据库索引
     redisson:
       file: classpath:redisson-dev.yml

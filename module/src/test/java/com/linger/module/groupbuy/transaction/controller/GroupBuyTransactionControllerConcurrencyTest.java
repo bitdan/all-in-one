@@ -2,7 +2,7 @@ package com.linger.module.groupbuy.transaction.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.linger.module.util.JsonUtils;
 import com.linger.LingerApplication;
 import com.linger.module.groupbuy.transaction.dto.CreateActivityRequest;
 import com.linger.module.groupbuy.transaction.dto.CreateGroupRequest;
@@ -69,7 +69,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {
                 "groupbuy.transaction.outbox-poll-ms=100",
-                "groupbuy.transaction.datasource.minimum-idle=20"
+                "spring.datasource.hikari.minimum-idle=20"
         }
 )
 class GroupBuyTransactionControllerConcurrencyTest {
@@ -78,8 +78,6 @@ class GroupBuyTransactionControllerConcurrencyTest {
 
     @Autowired
     private TestRestTemplate restTemplate;
-    @Autowired
-    private ObjectMapper objectMapper;
     @Autowired
     private GroupBuyGroupMapper groupMapper;
     @Autowired
@@ -260,7 +258,7 @@ class GroupBuyTransactionControllerConcurrencyTest {
 
     private HttpCallResult parseResponse(String path, ResponseEntity<String> response, long latencyMs) {
         try {
-            JsonNode json = objectMapper.readTree(response.getBody());
+            JsonNode json = JsonUtils.objectMapper.readTree(response.getBody());
             JsonNode data = json.path("data");
             String orderId = data.isObject() ? textOrNull(data.path("orderId")) : null;
             String dataText = data.isTextual() ? data.asText() : null;

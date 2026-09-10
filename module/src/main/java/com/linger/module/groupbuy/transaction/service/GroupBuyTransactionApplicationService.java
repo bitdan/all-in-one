@@ -16,7 +16,6 @@ import com.linger.module.groupbuy.transaction.model.ReservationResult;
 import com.linger.module.redisson.service.RateLimiterService;
 import lombok.RequiredArgsConstructor;
 import org.redisson.api.RateIntervalUnit;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -34,7 +33,6 @@ import java.util.UUID;
  */
 @Service
 @RequiredArgsConstructor
-@ConditionalOnProperty(prefix = "groupbuy.transaction", name = "enabled", havingValue = "true")
 public class GroupBuyTransactionApplicationService {
 
     private final GroupBuyTransactionStore store;

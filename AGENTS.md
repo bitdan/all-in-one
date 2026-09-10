@@ -55,6 +55,95 @@ For PRs:
 The parent POM defines `dev` and `local` profiles. Use them for environment-specific overrides when needed (e.g.,
 `mvn -Pdev test`).
 
+## MyBatis-Plus Guidelines
+
+These rules apply to persistence work in the `module` module.
+
+### Project Baseline
+
+- The parent POM manages MyBatis-Plus `3.5.17`; the module runs on Java 8, Spring Boot `2.7.18`, and PostgreSQL.
+  Preserve the BOM-managed version and the existing `mybatis-plus-jsqlparser-4.9` compatibility dependency. Do not
+  upgrade the starter, BOM, or JSqlParser artifact independently.
+- Keep shared interceptor and mapper scanning configuration in
+  `module/src/main/java/com/linger/module/config/MybatisPlusConfiguration.java`. Add new mapper packages to its
+  `@MapperScan` rather than creating competing configuration beans.
+- The configured interceptor chain already enables optimistic locking and PostgreSQL pagination. When adding
+  interceptors, follow the MyBatis-Plus ordering rule: SQL-transforming interceptors such as tenant or dynamic-table
+  handling first, pagination and optimistic locking next, and analysis or attack-blocking interceptors last. Add an
+  interceptor only with focused tests for affected queries.
+
+### Entities and Mappers
+
+- Mapper interfaces should extend `BaseMapper<Entity>`. Keep business rules, transaction orchestration, and DTO
+  conversion in a repository/store or service; do not pass MyBatis-Plus `Wrapper` objects through controllers, RPC
+  boundaries, or public service contracts.
+- Keep Mapper interfaces declarative: custom methods may retain `@Param`, but SQL belongs in a matching XML mapper
+  under `module/src/main/resources/mapper/`. Do not use `@Select`, `@Insert`, `@Update`, `@Delete`, provider
+  annotations, or annotation-embedded `<script>` SQL in Mapper interfaces.
+- Declare `@TableName` and `@TableId` explicitly. Match the real schema and its key strategy: use `IdType.INPUT` only
+  for application-assigned IDs and `IdType.AUTO` only for database-generated identity columns.
+- Rely on the configured underscore-to-camel mapping for ordinary columns. Use `@TableField` for an actual mapping
+  difference, a non-persistent property, field fill, or a type handler. When a field type handler must also apply to
+  query results, use `@TableName(autoResultMap = true)` as the existing JSON-list mapping does.
+- Follow the owning domain's audit convention. Group-buy entities use `OffsetDateTime` in UTC plus `@TableField(fill =
+  ...)` and `GroupBuyAuditMetaObjectHandler`; keep field names and Java types aligned with the handler. Remember that
+  wrapper-only updates with a null entity do not trigger automatic update fill, so set audit columns explicitly in
+  that case.
+- This repository currently models deletion with domain `status` values such as `deleted`. Do not introduce global
+  logic-delete settings or `@TableLogic` for one entity unless the schema, uniqueness rules, existing custom SQL, and
+  all read/write paths are migrated and tested together.
+
+### Queries and SQL Safety
+
+- Prefer `LambdaQueryWrapper` and `LambdaUpdateWrapper` for ordinary entity fields so refactors remain type-safe. Use
+  string-column `QueryWrapper` or custom mapper XML only when SQL-specific features such as PostgreSQL `ILIKE`, aliases,
+  joins, aggregates, projections, locking, or atomic state transitions make them clearer.
+- Build wrappers inside the method that executes them. They are mutable, are not thread-safe, and must not be cached,
+  shared, or reused; in particular, a wrapper passed to `update(entity, wrapper)` cannot be reused.
+- Use conditional wrapper overloads for optional filters. Validate identifiers and collections before construction:
+  MyBatis-Plus omits conditions such as `in` for an empty collection, which must never accidentally broaden an update,
+  delete, or authorization query.
+- Never concatenate request data into column names or SQL fragments. Map client-provided sort/filter keys through a
+  backend allowlist. Do not pass untrusted text to `apply`, `last`, `having`, `inSql`, `notInSql`, `eqSql`, `setSql`,
+  `orderBy`, or `groupBy`; use wrapper-bound values, `apply("... {0}", value)`, or MyBatis `#{...}` parameters. In XML,
+  reserve `${...}` for fixed, allowlisted structural SQL only.
+- `selectOne` is for predicates guaranteed unique by a database constraint. Do not hide duplicate-data bugs with an
+  arbitrary limit. If `last(...)` is genuinely required, its SQL must be a compile-time constant and never contain
+  user input.
+- Select only the columns needed for large rows or list endpoints, use deterministic ordering for pagination, and avoid
+  mapper calls inside loops. Use a join, a bounded bulk query, or a batch method to prevent N+1 access patterns.
+
+### Updates, Concurrency, and Transactions
+
+- Every update or delete must have an explicit, validated business condition. Treat missing IDs, empty ID collections,
+  and blank ownership/tenant keys as errors before building the wrapper. Check the affected-row count; do not silently
+  treat zero-row writes as success.
+- Do not pass request-bound entities directly to `insert`, `updateById`, or `saveOrUpdate`. Validate a command/DTO and
+  map only allowed fields so clients cannot write IDs, ownership, status, version, or audit fields unintentionally.
+- Entities using optimistic locking must declare and initialize `@Version`. For `updateById` or
+  `update(entity, wrapper)`, treat an affected-row count of zero as a stale write and handle it explicitly. Custom SQL
+  that performs a guarded state transition must include the old version or old status in the `WHERE` clause and update
+  the version atomically.
+- Prefer a single conditional SQL statement for counters, inventory, claims, and state transitions instead of a
+  read-then-write sequence. Preserve the existing group-buy rule that state changes use dedicated SQL with an old-state
+  condition.
+- Put multi-table writes and MyBatis batch work behind a public Spring `@Transactional` service boundary. Do not assume
+  self-invocation starts a transaction. MyBatis batch APIs require explicit transaction handling and their results or
+  flush failures must be checked.
+
+### Pagination, Batch Work, and Verification
+
+- Validate `current >= 1` and cap `size` at the API boundary; do not trust arbitrary client page sizes. Use
+  `searchCount = false` only when the caller does not need a total. For custom paginated SQL, pass a non-null `IPage`
+  parameter and verify joins and aliases produce a correct count query.
+- Use batch APIs for substantial collections instead of one mapper call per item. Split very large inputs into bounded
+  chunks, keep the operation transactional when atomicity is required, and do not assume batch processing enables a
+  transaction automatically.
+- For mapper or entity changes, add a focused test that exercises generated SQL against the repository's PostgreSQL
+  behavior where practical. Cover mapping/type handlers, empty optional filters, pagination bounds, zero-row guarded
+  updates, optimistic-lock conflicts, and soft-deleted rows as applicable. At minimum run
+  `mvn -pl module -am test`; use `MybatisPlusConfigurationTest` when changing interceptor configuration.
+
 ## Tool Hub Frontend Guidelines
 
 The `tool-hub/` app is a Vue 3 + Vite + Vuetify frontend.

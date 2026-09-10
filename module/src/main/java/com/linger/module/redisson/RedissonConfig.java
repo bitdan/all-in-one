@@ -1,12 +1,10 @@
 package com.linger.module.redisson;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.linger.module.util.JsonUtils;
 import org.redisson.codec.JsonJacksonCodec;
 import org.redisson.spring.starter.RedissonAutoConfigurationCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-
-import javax.annotation.Resource;
 
 /**
  * @version 1.0
@@ -16,14 +14,11 @@ import javax.annotation.Resource;
 @Configuration
 public class RedissonConfig {
 
-    @Resource
-    private ObjectMapper objectMapper;
-
     @Bean
     public RedissonAutoConfigurationCustomizer redissonCustomizer() {
 
         return config -> {
-            JsonJacksonCodec codec = new JsonJacksonCodec(objectMapper);
+            JsonJacksonCodec codec = new JsonJacksonCodec(JsonUtils.objectMapper);
             config.setCodec(codec);
         };
     }

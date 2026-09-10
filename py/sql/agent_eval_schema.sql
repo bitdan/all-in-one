@@ -18,7 +18,10 @@ CREATE TABLE IF NOT EXISTS agent_runs
     prompt_version     VARCHAR(64)      NOT NULL DEFAULT 'default',
     model_name         VARCHAR(128)     NOT NULL DEFAULT 'unknown',
     error_message      TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_by VARCHAR(128) NOT NULL DEFAULT 'system',
+    updated_by VARCHAR(128) NOT NULL DEFAULT 'system',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_agent_runs_route_created
@@ -40,7 +43,10 @@ CREATE TABLE IF NOT EXISTS agent_tool_calls
     input_payload  JSON,
     output_payload JSON,
     error_message  TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_by VARCHAR(128) NOT NULL DEFAULT 'system',
+    updated_by VARCHAR(128) NOT NULL DEFAULT 'system',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_agent_tool_calls_run
@@ -61,7 +67,10 @@ CREATE TABLE IF NOT EXISTS agent_feedback
     needs_human_takeover   BOOLEAN     NOT NULL DEFAULT false,
     hallucination_reported BOOLEAN     NOT NULL DEFAULT false,
     feedback_text          TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_by VARCHAR(128) NOT NULL DEFAULT 'system',
+    updated_by VARCHAR(128) NOT NULL DEFAULT 'system',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_agent_feedback_run
@@ -80,6 +89,8 @@ CREATE TABLE IF NOT EXISTS agent_eval_cases
     expected_payload JSON,
     source_run_id    VARCHAR(64)  REFERENCES agent_runs (id) ON DELETE SET NULL,
     status           VARCHAR(32)  NOT NULL DEFAULT 'active',
+    created_by VARCHAR(128) NOT NULL DEFAULT 'system',
+    updated_by VARCHAR(128) NOT NULL DEFAULT 'system',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -101,7 +112,10 @@ CREATE TABLE IF NOT EXISTS agent_eval_results
     hallucination_score DOUBLE PRECISION NOT NULL DEFAULT 0,
     passed              BOOLEAN          NOT NULL DEFAULT false,
     judge_reason        TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_by VARCHAR(128) NOT NULL DEFAULT 'system',
+    updated_by VARCHAR(128) NOT NULL DEFAULT 'system',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_agent_eval_results_case

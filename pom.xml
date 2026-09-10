@@ -32,6 +32,7 @@
         <jackson.version>2.13.5</jackson.version>
         <hutool.version>5.8.35</hutool.version>
         <mybatis-plus.version>3.5.17</mybatis-plus.version>
+        <sa-token.version>1.46.0</sa-token.version>
     </properties>
 
     <parent>
@@ -118,6 +119,17 @@
                 <groupId>cn.hutool</groupId>
                 <artifactId>hutool-all</artifactId>
                 <version>${hutool.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>cn.dev33</groupId>
+                <artifactId>sa-token-spring-boot-starter</artifactId>
+                <version>${sa-token.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>cn.dev33</groupId>
+                <artifactId>sa-token-redis-template</artifactId>
+                <version>${sa-token.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

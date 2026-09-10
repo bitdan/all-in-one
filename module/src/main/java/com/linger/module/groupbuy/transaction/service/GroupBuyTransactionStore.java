@@ -23,7 +23,6 @@ import com.linger.module.groupbuy.transaction.model.GroupOrderStatus;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,7 +40,6 @@ import java.util.UUID;
  */
 @Component
 @RequiredArgsConstructor
-@ConditionalOnProperty(prefix = "groupbuy.transaction", name = "enabled", havingValue = "true")
 public class GroupBuyTransactionStore {
 
     private final GroupBuyActivityMapper activityMapper;

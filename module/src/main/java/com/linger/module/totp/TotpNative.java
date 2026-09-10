@@ -32,6 +32,10 @@ public class TotpNative {
     // Base32解码
     public static byte[] base32Decode(String secret) {
         secret = secret.trim().replaceAll("=", "").toUpperCase(Locale.ROOT);
+        int remainder = secret.length() % 8;
+        if (remainder == 1 || remainder == 3 || remainder == 6) {
+            throw new IllegalArgumentException("非法Base32长度");
+        }
         int buffer = 0;
         int bitsLeft = 0;
         int byteCount = (secret.length() * 5) / 8;
@@ -39,6 +43,9 @@ public class TotpNative {
         int index = 0;
 
         for (char c : secret.toCharArray()) {
+            if (c >= BASE32_DECODE.length) {
+                throw new IllegalArgumentException("非法Base32字符: " + c);
+            }
             int val = BASE32_DECODE[c];
             if (val < 0) {
                 throw new IllegalArgumentException("非法Base32字符: " + c);
@@ -78,9 +85,15 @@ public class TotpNative {
 
     // 新增：根据指定时间步生成TOTP码
     public static String generateTotpAtTime(String secretKey, long timeStep) throws NoSuchAlgorithmException, InvalidKeyException {
+        return generateTotpAtTime(secretKey, timeStep, "SHA1", 6);
+    }
+
+    public static String generateTotpAtTime(String secretKey, long timeStep, String algorithm, int digits)
+            throws NoSuchAlgorithmException, InvalidKeyException {
         byte[] keyBytes = base32Decode(secretKey);
-        Mac mac = Mac.getInstance("HmacSHA1");
-        mac.init(new SecretKeySpec(keyBytes, "HmacSHA1"));
+        String macAlgorithm = "Hmac" + algorithm.replace("-", "").toUpperCase(Locale.ROOT);
+        Mac mac = Mac.getInstance(macAlgorithm);
+        mac.init(new SecretKeySpec(keyBytes, macAlgorithm));
         byte[] hash = mac.doFinal(ByteBuffer.allocate(8).putLong(timeStep).array());
 
         int offset = hash[hash.length - 1] & 0xF;
@@ -89,8 +102,12 @@ public class TotpNative {
                 ((hash[offset + 2] & 0xFF) << 8) |
                 (hash[offset + 3] & 0xFF);
 
-        int otp = binary % 1_000_000;
-        return String.format("%06d", otp);
+        int divisor = 1;
+        for (int index = 0; index < digits; index++) {
+            divisor *= 10;
+        }
+        int otp = binary % divisor;
+        return String.format("%0" + digits + "d", otp);
     }
 
 

@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS sys_users
     roles JSONB NOT NULL DEFAULT '["user"]'::jsonb,
     permissions JSONB NOT NULL DEFAULT '[]'::jsonb,
     last_login_at TIMESTAMPTZ,
+    created_by VARCHAR(128) NOT NULL DEFAULT 'system',
+    updated_by VARCHAR(128) NOT NULL DEFAULT 'system',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -32,6 +34,8 @@ INSERT INTO sys_users (user_id,
                        status,
                        roles,
                        permissions,
+                       created_by,
+                       updated_by,
                        created_at,
                        updated_at)
 VALUES ('admin',
@@ -42,6 +46,8 @@ VALUES ('admin',
         'active',
         '["admin"]'::jsonb,
         '["*"]'::jsonb,
+        'admin',
+        'admin',
         NOW(),
         NOW())
 ON CONFLICT
@@ -53,4 +59,5 @@ SET user_id = EXCLUDED.user_id,
     status = 'active',
     roles = EXCLUDED.roles,
     permissions = EXCLUDED.permissions,
+    updated_by = 'admin',
     updated_at = NOW();

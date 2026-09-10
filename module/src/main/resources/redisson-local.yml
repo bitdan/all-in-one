@@ -16,9 +16,9 @@ singleServerConfig:
   # 客户端名称
   clientName: SpringBootTest
   #  # 节点地址
-  address: redis://43.156.83.246:6379
+  address: "redis://${REDIS_HOST:-43.156.83.246}:${REDIS_PORT:-6379}"
   # 密码
-  password: dudu0.0@
+  password: ${REDIS_PASSWORD:-dudu0.0@}
   # 发布和订阅连接的最小空闲连接数
   subscriptionConnectionMinimumIdleSize: 1
   # 发布和订阅连接池大小
@@ -28,7 +28,7 @@ singleServerConfig:
   # 连接池大小
   connectionPoolSize: 16
   # 数据库编号
-  database: 15
+  database: ${REDIS_DATABASE:-15}
   # DNS监测时间间隔，单位：毫秒
   dnsMonitoringInterval: 5000
 # 线程池数量,默认值: 当前处理核数量 * 2

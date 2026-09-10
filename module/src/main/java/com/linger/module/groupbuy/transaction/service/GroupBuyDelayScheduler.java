@@ -7,7 +7,6 @@ import com.linger.module.groupbuy.transaction.model.GroupBuyDelayTaskType;
 import com.linger.module.timeWheel.TimeWheelScheduler;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -30,7 +29,6 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-@ConditionalOnProperty(prefix = "groupbuy.transaction", name = "enabled", havingValue = "true")
 public class GroupBuyDelayScheduler {
 
     private static final long LOAD_AHEAD_SECONDS = 30L;

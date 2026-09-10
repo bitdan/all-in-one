@@ -2,12 +2,10 @@ package com.linger.module.groupbuy.transaction.service;
 
 import com.linger.module.groupbuy.transaction.entity.GroupBuyOrderEntity;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
-@ConditionalOnProperty(prefix = "groupbuy.transaction", name = "enabled", havingValue = "true")
 public class LocalPaymentGateway implements PaymentGateway {
 
     @Override
@@ -18,4 +16,3 @@ public class LocalPaymentGateway implements PaymentGateway {
         return true;
     }
 }
-

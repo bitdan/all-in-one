@@ -2,7 +2,6 @@ package com.linger.module.groupbuy.config;
 
 import com.baomidou.mybatisplus.core.handlers.MetaObjectHandler;
 import org.apache.ibatis.reflection.MetaObject;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.time.OffsetDateTime;
@@ -15,7 +14,6 @@ import java.time.ZoneOffset;
  * 下单、开团等已经持有用户 ID 的链路会在构建实体时显式赋值，严格填充不会覆盖已有值。</p>
  */
 @Component
-@ConditionalOnProperty(prefix = "groupbuy.transaction", name = "enabled", havingValue = "true")
 public class GroupBuyAuditMetaObjectHandler implements MetaObjectHandler {
 
     private static final Long SYSTEM_USER_ID = 0L;
@@ -35,4 +33,3 @@ public class GroupBuyAuditMetaObjectHandler implements MetaObjectHandler {
         strictUpdateFill(metaObject, "updatedAt", OffsetDateTime.class, OffsetDateTime.now(ZoneOffset.UTC));
     }
 }
-

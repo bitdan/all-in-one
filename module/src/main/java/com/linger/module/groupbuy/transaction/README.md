@@ -31,25 +31,16 @@ psql $env:POSTGRES_DSN -f module/src/main/java/com/linger/module/groupbuy/groupb
 
 ## 3. 配置并启动
 
-可以直接复用 Python 服务已导出到当前进程的 `POSTGRES_DSN`：
+应用使用 Spring Boot 标准数据源自动配置，Tool Hub 与拼团业务共享同一个连接池：
 
 ```powershell
-$env:GROUPBUY_TRANSACTION_ENABLED="true"
-$env:POSTGRES_DSN="postgresql://user:password@host:5432/tool_hub"
+$env:SPRING_DATASOURCE_URL="jdbc:postgresql://host:5432/tool_hub"
+$env:SPRING_DATASOURCE_USERNAME="user"
+$env:SPRING_DATASOURCE_PASSWORD="password"
 mvn -pl module -am -Plocal spring-boot:run
 ```
 
-也可以配置标准 JDBC 参数：
-
-```powershell
-$env:GROUPBUY_TRANSACTION_ENABLED="true"
-$env:GROUPBUY_POSTGRES_JDBC_URL="jdbc:postgresql://host:5432/tool_hub"
-$env:GROUPBUY_POSTGRES_USERNAME="user"
-$env:GROUPBUY_POSTGRES_PASSWORD="password"
-mvn -pl module -am -Plocal spring-boot:run
-```
-
-交易引擎默认关闭。这样没有 PostgreSQL 配置时，原有 Redis、PDF、TOTP 等功能和测试不会受影响。
+交易引擎和数据库连接均随 Spring Boot 应用启动，不再维护独立的拼团启用开关与连接配置。
 
 ## 4. 调用顺序
 
@@ -132,4 +123,3 @@ initialStock = available + reserved + confirmed
 ```
 
 建议压测时同时校验数据库库存流水、Redis 三段库存、团人数和订单状态，不能只统计 HTTP 成功数。
-

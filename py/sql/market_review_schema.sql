@@ -6,6 +6,8 @@ CREATE TABLE IF NOT EXISTS market_review_runs
     status VARCHAR(32) NOT NULL DEFAULT 'final',
     error_message TEXT,
     generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by VARCHAR(128) NOT NULL DEFAULT 'system',
+    updated_by VARCHAR(128) NOT NULL DEFAULT 'system',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_market_review_runs_date_source UNIQUE (trade_date, source)
@@ -35,6 +37,8 @@ CREATE TABLE IF NOT EXISTS market_limit_up_pool
     board_quality_score      NUMERIC(10, 2) NOT NULL DEFAULT 0,
     tags JSONB NOT NULL DEFAULT '[]'::jsonb,
     raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_by VARCHAR(128) NOT NULL DEFAULT 'system',
+    updated_by VARCHAR(128) NOT NULL DEFAULT 'system',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_market_limit_up_pool_date_code UNIQUE (trade_date, code)
@@ -59,6 +63,8 @@ CREATE TABLE IF NOT EXISTS market_sector_strength
     core_stocks JSONB NOT NULL DEFAULT '[]'::jsonb,
     strength_score         NUMERIC(10, 2) NOT NULL DEFAULT 0,
     risk_tags JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_by VARCHAR(128) NOT NULL DEFAULT 'system',
+    updated_by VARCHAR(128) NOT NULL DEFAULT 'system',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_market_sector_strength_date_industry UNIQUE (trade_date, industry)
@@ -80,6 +86,8 @@ CREATE TABLE IF NOT EXISTS market_candidate_pool
     reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
     risks JSONB NOT NULL DEFAULT '[]'::jsonb,
     rule_version    VARCHAR(32)    NOT NULL DEFAULT 'v1',
+    created_by VARCHAR(128) NOT NULL DEFAULT 'system',
+    updated_by VARCHAR(128) NOT NULL DEFAULT 'system',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_market_candidate_pool_date_type_code UNIQUE (trade_date, pool_type, code)
@@ -101,6 +109,8 @@ CREATE TABLE IF NOT EXISTS market_review_signal
     reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
     risks JSONB NOT NULL DEFAULT '[]'::jsonb,
     rule_version VARCHAR(32)    NOT NULL DEFAULT 'v1',
+    created_by VARCHAR(128) NOT NULL DEFAULT 'system',
+    updated_by VARCHAR(128) NOT NULL DEFAULT 'system',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_market_review_signal_date_type_code UNIQUE (trade_date, signal_type, code)
@@ -128,6 +138,8 @@ CREATE TABLE IF NOT EXISTS market_radar_sector_snapshot
     core_stocks JSONB NOT NULL DEFAULT '[]'::jsonb,
     reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
     risks JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_by VARCHAR(128) NOT NULL DEFAULT 'system',
+    updated_by VARCHAR(128) NOT NULL DEFAULT 'system',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_market_radar_sector_date_type_name UNIQUE (trade_date, sector_type, sector_name)
@@ -153,6 +165,8 @@ CREATE TABLE IF NOT EXISTS market_radar_candidate_snapshot
     reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
     risks JSONB NOT NULL DEFAULT '[]'::jsonb,
     tags JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_by VARCHAR(128) NOT NULL DEFAULT 'system',
+    updated_by VARCHAR(128) NOT NULL DEFAULT 'system',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_market_radar_candidate_date_code_signal UNIQUE (trade_date, code, signal_type)
@@ -180,6 +194,8 @@ CREATE TABLE IF NOT EXISTS market_stock_kline_daily
     change_percent NUMERIC(10, 4),
     turnover_rate  NUMERIC(10, 4),
     raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_by VARCHAR(128) NOT NULL DEFAULT 'system',
+    updated_by VARCHAR(128) NOT NULL DEFAULT 'system',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_market_stock_kline_daily_date_code UNIQUE (trade_date, code)
@@ -207,6 +223,8 @@ CREATE TABLE IF NOT EXISTS market_stock_kline_intraday
     change_percent NUMERIC(10, 4),
     turnover_rate  NUMERIC(10, 4),
     raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_by VARCHAR(128) NOT NULL DEFAULT 'system',
+    updated_by VARCHAR(128) NOT NULL DEFAULT 'system',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_market_stock_kline_intraday_time_code_period UNIQUE (bar_time, code, period)
@@ -216,3 +234,19 @@ CREATE INDEX IF NOT EXISTS idx_market_stock_kline_intraday_code_period_time
     ON market_stock_kline_intraday (code, period, bar_time);
 CREATE INDEX IF NOT EXISTS idx_market_stock_kline_intraday_trade_date
     ON market_stock_kline_intraday (trade_date, period);
+
+CREATE TABLE IF NOT EXISTS market_stock_universe
+(
+    code VARCHAR(16) PRIMARY KEY,
+    name VARCHAR(64) NOT NULL DEFAULT '',
+    market VARCHAR(16) NOT NULL DEFAULT '',
+    status VARCHAR(16) NOT NULL DEFAULT 'active',
+    raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_by VARCHAR(128) NOT NULL DEFAULT 'system',
+    updated_by VARCHAR(128) NOT NULL DEFAULT 'system',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_market_stock_universe_status_code
+    ON market_stock_universe (status, code);
