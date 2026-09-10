@@ -32,7 +32,8 @@
         <jackson.version>2.13.5</jackson.version>
         <hutool.version>5.8.35</hutool.version>
         <mybatis-plus.version>3.5.17</mybatis-plus.version>
-        <sa-token.version>1.46.0</sa-token.version>
+        <!-- 1.46.0 使用 KEEPTTL 更新 Session，Redisson 3.x 会错误转换为 PX -2000 -->
+        <sa-token.version>1.45.0</sa-token.version>
     </properties>
 
     <parent>
@@ -66,6 +67,11 @@
             <dependency>
                 <groupId>org.redisson</groupId>
                 <artifactId>redisson-spring-boot-starter</artifactId>
+                <version>${redisson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.redisson</groupId>
+                <artifactId>redisson-spring-data-27</artifactId>
                 <version>${redisson.version}</version>
             </dependency>
             <dependency>
