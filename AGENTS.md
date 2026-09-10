@@ -14,12 +14,16 @@
 在仓库根目录执行 Maven；若 `mvn` 不在 `PATH`，使用 `D:\app\apache-maven-3.6.3\bin\mvn.cmd`。
 
 ```powershell
-mvn -pl module -am test
-mvn -pl module -am clean package
+mvn -Plocal -pl module -am "-Dtest=HttpUtilTest,DeepSeekClientTest" "-Dsurefire.failIfNoSpecifiedTests=false" test
+mvn -Plocal -pl module -am "-Dtest=DeepSeekApiIntegrationTest" "-Dsurefire.failIfNoSpecifiedTests=false" test
+mvn -Plocal -pl module -am -DskipTests package
 mvn -pl leetcode-editor -am test
 mvn -DskipTests package
 ```
 
+- `module` 的 `application.yml` 使用 Maven 占位符 `@profile.active@`；执行 `module` 测试或构建时必须启用 `-Plocal`，不要直接运行未指定 Profile 的 Maven 命令。
+- 默认只运行本次改动涉及的定向测试，通过 `-Dtest=TestClass1,TestClass2` 指定测试类；除非用户明确要求，否则不要运行 `module` 全量测试。
+- PowerShell 会解析 `-Dtest` 中的逗号，指定多个测试类时需将整个 `-Dtest=...` 参数放在引号内。
 - 测试使用 JUnit 5，放在对应模块的 `src/test/java`，类名以 `*Test` 结尾。
 - 单元测试应快速、聚焦；仅在必要时添加集成测试。
 - 测试中可使用 `@Slf4j` 输出关键结果。交付时说明执行过的命令和结果。
