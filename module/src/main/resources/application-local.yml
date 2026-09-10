@@ -11,3 +11,16 @@ spring:
     database: ${REDIS_DATABASE:15} # 数据库索引
     redisson:
       file: classpath:redisson-local.yml
+
+mybatis-plus:
+  configuration:
+    # 为所有 Mapper 日志增加统一前缀，便于只在本地开启 SQL、参数和结果打印。
+    log-prefix: mybatis.sql.
+
+#logging:
+#  level:
+#    # MyBatis 使用 Mapper statement id 作为 logger 名称。
+#    mybatis.sql: DEBUG
+#    # RedisTemplate 可能使用 Lettuce；RedissonClient 和当前 RedisTemplate 使用 Redisson。
+#    io.lettuce.core.protocol.CommandHandler: DEBUG
+#    org.redisson.command.RedisExecutor: DEBUG

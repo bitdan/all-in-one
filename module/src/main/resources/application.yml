@@ -19,6 +19,21 @@ toolhub:
   game-room-ttl-seconds: ${TOOL_HUB_GAME_ROOM_TTL_SECONDS:86400}
   totp-master-key: ${TOOL_HUB_TOTP_MASTER_KEY:}
 
+http:
+  client:
+    connect-timeout-millis: ${HTTP_CLIENT_CONNECT_TIMEOUT_MILLIS:10000}
+    read-timeout-millis: ${HTTP_CLIENT_READ_TIMEOUT_MILLIS:600000}
+    write-timeout-millis: ${HTTP_CLIENT_WRITE_TIMEOUT_MILLIS:60000}
+    call-timeout-millis: ${HTTP_CLIENT_CALL_TIMEOUT_MILLIS:0}
+    max-response-body-bytes: ${HTTP_CLIENT_MAX_RESPONSE_BODY_BYTES:16777216}
+
+deepseek:
+  base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+  api-key: ${DEEPSEEK_API_KEY:}
+  model: ${DEEPSEEK_MODEL:deepseek-flash}
+  call-timeout-millis: ${DEEPSEEK_CALL_TIMEOUT_MILLIS:0}
+  max-response-body-bytes: ${DEEPSEEK_MAX_RESPONSE_BODY_BYTES:16777216}
+
 sa-token:
   token-name: Authorization
   token-prefix: Bearer
