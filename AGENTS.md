@@ -1,387 +1,123 @@
-# Repository Guidelines
+# 项目协作规范
 
-## Project Structure & Module Organization
+## 项目概况
 
-This is a Maven multi-module Java repository. The parent `pom.xml` defines shared dependency versions and profiles.
+- 本仓库是 Java 8 Maven 多模块项目，父 `pom.xml` 统一管理依赖版本和 `dev`、`local` 环境。
+- `module/`：Spring Boot 主模块；源码和资源位于 `src/main`，测试位于 `src/test`。
+- `leetcode-editor/`：LeetCode 代码；`tool-hub/`：Vue 3 前端；`py/`：FastAPI 后端。
+- Java 使用 4 空格缩进；类名用 `PascalCase`，方法和字段用 `camelCase`，常量用 `UPPER_SNAKE_CASE`。
+- `module` 已使用 Lombok，优先用 Lombok 和构造器注入，避免手写样板构造器、Getter、Setter。
+- 提交信息遵循 Conventional Commits，如 `feat(post): add comment api`。
 
-Key paths:
+## 构建与测试
 
-- `module/src/main/java` and `module/src/main/resources`: primary Spring Boot module code and resources.
-- `module/src/test/java`: tests for the `module` module.
-- `leetcode-editor/src/main/java`: LeetCode solution implementations.
-- `script/`, `py/`, `tool-hub/`: helper scripts and tooling (not part of the main build).
-
-## Build, Test, and Development Commands
-
-Use Maven from the repo root. On this machine Maven is installed at `D:\app\apache-maven-3.6.3`; if `mvn` is not on
-`PATH`, run `D:\app\apache-maven-3.6.3\bin\mvn.cmd` instead.
-
-1. `mvn -pl module -am clean package` — build the main module and its dependencies.
-2. `mvn -pl module -am test` — run tests for the main module.
-3. `mvn -pl leetcode-editor -am test` — run tests (if any) for the LeetCode editor module.
-4. `mvn -DskipTests package` — full build without tests.
-
-## Coding Style & Naming Conventions
-
-- Language level: Java 8 (`maven.compiler.source/target` set to 8).
-- Indentation: 4 spaces, no tabs.
-- Packages follow reverse-domain naming (e.g., `com.linger...`).
-- Class names: `PascalCase`; methods/fields: `camelCase`; constants: `UPPER_SNAKE_CASE`.
-- Lombok is used in the `module` module—prefer Lombok annotations over boilerplate.
-
-## Testing Guidelines
-
-- Testing stack: Spring Boot Test (JUnit 5 via `spring-boot-starter-test`).
-- Place tests under `module/src/test/java` and name them `*Test`.
-- Keep unit tests fast; add integration tests only when needed.
-- Use `@Slf4j` in tests and log key assertions/results so test runs emit useful output.
-- No explicit coverage threshold is configured.
-
-## Commit & Pull Request Guidelines
-
-Commit history follows Conventional Commits with scopes, for example:
-
-- `feat(redisson): add like service`
-- `refactor(pdf): optimize text removal`
-
-For PRs:
-
-1. Provide a clear description of the change and rationale.
-2. Link related issues or requirements.
-3. Include test evidence (commands run and results).
-
-## Configuration & Profiles
-
-The parent POM defines `dev` and `local` profiles. Use them for environment-specific overrides when needed (e.g.,
-`mvn -Pdev test`).
-
-## MyBatis-Plus Guidelines
-
-These rules apply to persistence work in the `module` module.
-
-### Project Baseline
-
-- The parent POM manages MyBatis-Plus `3.5.17`; the module runs on Java 8, Spring Boot `2.7.18`, and PostgreSQL.
-  Preserve the BOM-managed version and the existing `mybatis-plus-jsqlparser-4.9` compatibility dependency. Do not
-  upgrade the starter, BOM, or JSqlParser artifact independently.
-- Keep shared interceptor and mapper scanning configuration in
-  `module/src/main/java/com/linger/module/config/MybatisPlusConfiguration.java`. Add new mapper packages to its
-  `@MapperScan` rather than creating competing configuration beans.
-- The configured interceptor chain already enables optimistic locking and PostgreSQL pagination. When adding
-  interceptors, follow the MyBatis-Plus ordering rule: SQL-transforming interceptors such as tenant or dynamic-table
-  handling first, pagination and optimistic locking next, and analysis or attack-blocking interceptors last. Add an
-  interceptor only with focused tests for affected queries.
-
-### Entities and Mappers
-
-- Mapper interfaces should extend `BaseMapper<Entity>`. Keep business rules, transaction orchestration, and DTO
-  conversion in a repository/store or service; do not pass MyBatis-Plus `Wrapper` objects through controllers, RPC
-  boundaries, or public service contracts.
-- Keep Mapper interfaces declarative: custom methods may retain `@Param`, but SQL belongs in a matching XML mapper
-  under `module/src/main/resources/mapper/`. Do not use `@Select`, `@Insert`, `@Update`, `@Delete`, provider
-  annotations, or annotation-embedded `<script>` SQL in Mapper interfaces.
-- Declare `@TableName` and `@TableId` explicitly. Match the real schema and its key strategy: use `IdType.INPUT` only
-  for application-assigned IDs and `IdType.AUTO` only for database-generated identity columns.
-- Rely on the configured underscore-to-camel mapping for ordinary columns. Use `@TableField` for an actual mapping
-  difference, a non-persistent property, field fill, or a type handler. When a field type handler must also apply to
-  query results, use `@TableName(autoResultMap = true)` as the existing JSON-list mapping does.
-- Follow the owning domain's audit convention. Group-buy entities use `OffsetDateTime` in UTC plus `@TableField(fill =
-  ...)` and `GroupBuyAuditMetaObjectHandler`; keep field names and Java types aligned with the handler. Remember that
-  wrapper-only updates with a null entity do not trigger automatic update fill, so set audit columns explicitly in
-  that case.
-- This repository currently models deletion with domain `status` values such as `deleted`. Do not introduce global
-  logic-delete settings or `@TableLogic` for one entity unless the schema, uniqueness rules, existing custom SQL, and
-  all read/write paths are migrated and tested together.
-
-### Queries and SQL Safety
-
-- Prefer `LambdaQueryWrapper` and `LambdaUpdateWrapper` for ordinary entity fields so refactors remain type-safe. Use
-  string-column `QueryWrapper` or custom mapper XML only when SQL-specific features such as PostgreSQL `ILIKE`, aliases,
-  joins, aggregates, projections, locking, or atomic state transitions make them clearer.
-- Build wrappers inside the method that executes them. They are mutable, are not thread-safe, and must not be cached,
-  shared, or reused; in particular, a wrapper passed to `update(entity, wrapper)` cannot be reused.
-- Use conditional wrapper overloads for optional filters. Validate identifiers and collections before construction:
-  MyBatis-Plus omits conditions such as `in` for an empty collection, which must never accidentally broaden an update,
-  delete, or authorization query.
-- Never concatenate request data into column names or SQL fragments. Map client-provided sort/filter keys through a
-  backend allowlist. Do not pass untrusted text to `apply`, `last`, `having`, `inSql`, `notInSql`, `eqSql`, `setSql`,
-  `orderBy`, or `groupBy`; use wrapper-bound values, `apply("... {0}", value)`, or MyBatis `#{...}` parameters. In XML,
-  reserve `${...}` for fixed, allowlisted structural SQL only.
-- `selectOne` is for predicates guaranteed unique by a database constraint. Do not hide duplicate-data bugs with an
-  arbitrary limit. If `last(...)` is genuinely required, its SQL must be a compile-time constant and never contain
-  user input.
-- Select only the columns needed for large rows or list endpoints, use deterministic ordering for pagination, and avoid
-  mapper calls inside loops. Use a join, a bounded bulk query, or a batch method to prevent N+1 access patterns.
-
-### Updates, Concurrency, and Transactions
-
-- Every update or delete must have an explicit, validated business condition. Treat missing IDs, empty ID collections,
-  and blank ownership/tenant keys as errors before building the wrapper. Check the affected-row count; do not silently
-  treat zero-row writes as success.
-- Do not pass request-bound entities directly to `insert`, `updateById`, or `saveOrUpdate`. Validate a command/DTO and
-  map only allowed fields so clients cannot write IDs, ownership, status, version, or audit fields unintentionally.
-- Entities using optimistic locking must declare and initialize `@Version`. For `updateById` or
-  `update(entity, wrapper)`, treat an affected-row count of zero as a stale write and handle it explicitly. Custom SQL
-  that performs a guarded state transition must include the old version or old status in the `WHERE` clause and update
-  the version atomically.
-- Prefer a single conditional SQL statement for counters, inventory, claims, and state transitions instead of a
-  read-then-write sequence. Preserve the existing group-buy rule that state changes use dedicated SQL with an old-state
-  condition.
-- Put multi-table writes and MyBatis batch work behind a public Spring `@Transactional` service boundary. Do not assume
-  self-invocation starts a transaction. MyBatis batch APIs require explicit transaction handling and their results or
-  flush failures must be checked.
-
-### Pagination, Batch Work, and Verification
-
-- Validate `current >= 1` and cap `size` at the API boundary; do not trust arbitrary client page sizes. Use
-  `searchCount = false` only when the caller does not need a total. For custom paginated SQL, pass a non-null `IPage`
-  parameter and verify joins and aliases produce a correct count query.
-- Use batch APIs for substantial collections instead of one mapper call per item. Split very large inputs into bounded
-  chunks, keep the operation transactional when atomicity is required, and do not assume batch processing enables a
-  transaction automatically.
-- For mapper or entity changes, add a focused test that exercises generated SQL against the repository's PostgreSQL
-  behavior where practical. Cover mapping/type handlers, empty optional filters, pagination bounds, zero-row guarded
-  updates, optimistic-lock conflicts, and soft-deleted rows as applicable. At minimum run
-  `mvn -pl module -am test`; use `MybatisPlusConfigurationTest` when changing interceptor configuration.
-
-## Tool Hub Frontend Guidelines
-
-The `tool-hub/` app is a Vue 3 + Vite + Vuetify frontend.
-
-- API wrappers live under `tool-hub/src/api`. Use the existing `tool-hub/src/utils/request.ts` axios wrapper so
-  authentication headers, cookies, timeout handling, and global error behavior stay consistent.
-- Feature pages live under `tool-hub/src/views`. Group larger product areas by domain, such as
-  `tool-hub/src/views/community`.
-- Register navigable pages in `tool-hub/src/router/index.ts`. Add `requiresAuth: true` only for pages that actually
-  require login; keep read-only public pages public when possible.
-- The side navigation is built from grouped router records in `tool-hub/src/components/AppNavigation.vue`. Add new
-  top-level product areas as route groups, then include that group in the navigation filter.
-- Prefer Vuetify components and Material Design Icons (`mdi-*`) for controls. Keep pages usable as the first screen;
-  do not add marketing-style landing pages for internal tools or app features.
-- Product style should feel like a polished internal tool hub: quiet, fast to scan, and immediately actionable. Prefer
-  dense but orderly layouts, restrained borders, subtle shadows, and clear hierarchy over decorative card-heavy pages.
-- Keep the established Tool Hub visual language consistent: use the shared CSS tokens in `tool-hub/src/main.css`,
-  8px radii for cards and panels, neutral slate surfaces, blue primary actions, and small tonal accents for status or
-  category cues. Avoid one-off palettes, oversized hero typography inside tool pages, and purely ornamental gradients.
-- **Design tokens (`tool-hub/src/main.css`)** — all custom CSS must reference these variables instead of hardcoded hex
-  colors. The token file also defines shared utility classes for common patterns.
-
-  **Color tokens:**
-  | Variable | Value | Usage |
-  |---|---|---|
-  | `--color-primary` | `#2563eb` | Primary actions, links, focus rings |
-  | `--color-primary-light` | `#dbeafe` | Primary tint backgrounds (badges, pills) |
-  | `--color-primary-dark` | `#1d4ed8` | Active/hover states |
-  | `--color-surface` | `#ffffff` | Card and panel backgrounds |
-  | `--color-surface-elevated` | `rgba(255,255,255,0.7)` | Glass card backgrounds |
-  | `--color-bg` | `#f8fafc` | Page background |
-  | `--color-text` | `#0f172a` | Primary text |
-  | `--color-text-muted` | `#64748b` | Secondary text, descriptions |
-  | `--color-text-subtle` | `#94a3b8` | Placeholder, disabled text |
-  | `--color-border` | `#e2e8f0` | Card/input borders |
-  | `--color-success` | `#16a34a` | Success states |
-  | `--color-warning` | `#d97706` | Warning states |
-  | `--color-error` | `#dc2626` | Error states |
-  | `--color-info` | `#0ea5e9` | Info states |
-
-  **Spacing & shape tokens:**
-  | Variable | Value |
-  |---|---|
-  | `--radius-card` | `16px` |
-  | `--radius-element` | `8px` |
-  | `--radius-pill` | `9999px` |
-  | `--shadow-card` | `0 4px 24px rgba(15,23,42,0.06)` |
-  | `--shadow-card-hover` | `0 8px 32px rgba(15,23,42,0.10)` |
-
-  **Shared utility classes (defined in `main.css`):**
-  | Class | Purpose |
-  |---|---|
-  | `.glass-card` | Translucent card with backdrop blur — use for elevated content panels |
-  | `.solid-card` | Opaque white card with border — use for nested sections inside a glass card |
-  | `.page-container` | Max-width centered wrapper for standalone pages (not needed inside `ToolPageLayout`) |
-  | `.page-header` | Flex row with `h1` + `p` — use only on pages that do NOT use `ToolPageLayout` |
-  | `.section-header` | Flex row with `h2` — for sub-sections within a card |
-  | `.empty-state` | Centered placeholder with icon and text — use for zero-data states |
-  | `.score-bar` / `.score-text` / `.score-track` / `.score-fill` | Horizontal score meter (market views) |
-  | `.chip-row` | Flex wrap container for `v-chip` groups |
-  | `.up-text` / `.down-text` / `.flat-text` | Red/green/grey text for financial change indicators |
-
-- **Vuetify theme** is defined in `tool-hub/src/main.ts` and is kept in sync with the CSS tokens above. Use Vuetify
-  color props (`color="primary"`, `color="success"`, etc.) on Vuetify components rather than raw hex values.
-- **Tailwind theme** in `tailwind.config.js` extends the default palette with matching `primary` and `surface` color
-  scales plus `rounded-card` and `shadow-card` utilities. Prefer the shared CSS classes (`glass-card`, `solid-card`)
-  over chaining Tailwind utilities for card patterns.
-- The home page may keep a distinctive visual background, but it must primarily serve tool discovery. Include searchable
-  or scannable entry points such as featured tools, categories, recent tools, or quick actions rather than a passive
-  showcase.
-- Use route metadata in `tool-hub/src/router/index.ts` as the source of truth for navigable UI. Add meaningful
-  `title`, `description`, `icon`, `keywords`, and `featured` metadata when adding public pages so navigation search and
-  the home launcher stay useful.
-- Prefer `ToolPageLayout` for individual tool pages. Use its compact/workspace variants for full-screen work areas such
-  as AI chat or data dashboards, and avoid duplicating the page title when the layout already renders one.
-- `ToolPageLayout` reads `title`, `description`, and `icon` from `route.meta` automatically — do not add a second
-  `<h1>` or page header inside the slot. Set `:card="false"` for full-bleed layouts (chat, canvas editors, dashboards),
-  and use the default `card=true` for standard tool pages that benefit from a contained white card.
-- Avoid global element styles that fight Vuetify, especially broad `button`, `input`, or `textarea` rules. If a native
-  element is unavoidable, scope its styles to the page/component and make it visually compatible with Vuetify controls.
-- For common UI patterns such as tables, forms, dialogs, pagination, tabs, menus, filters, and loading/empty states,
-  prefer Vuetify or existing project components first. If the existing component set cannot cover the interaction
-  cleanly, evaluate adding a mature, well-maintained dependency. Hand-written low-level HTML/CSS implementations should
-  be the last option, used only when component-based approaches are unsuitable.
-- For complex frontend interactions or domain-heavy widgets, first evaluate mature, well-maintained components or
-  libraries instead of hand-rolling core behavior. Examples include financial charts, rich editors, graph/network
-  visualizations, calendars, maps, drag-and-drop builders, and virtualized data grids.
-- When implementing domain-specific UI, reference established industry conventions for that domain and match user
-  expectations unless the request explicitly calls for a different interaction model. For example, stock charting
-  should follow common brokerage/trading UI patterns such as separate time-line and candlestick views, crosshair
-  inspection, standard period controls, price/volume panes, and familiar red/green market coloring.
-- For frontend verification, use static checks, unit tests, and `npm run build` from `tool-hub/` only. Do not run browser automation, Playwright/E2E browser checks, take browser screenshots, open localhost pages, or otherwise perform browser-based verification.
-
-## Python Backend Guidelines
-
-The `py/` app is a FastAPI backend assembled in `py/app.py` through a dependency container from `py/bootstrap.py`.
-
-- Local Python backend work should run inside the Conda environment `ai`. Start PowerShell sessions with
-  `conda activate ai` before running Python commands, Alembic migrations, or backend tests.
-
-- Add new backend features as domain modules under `py/<domain>/`, typically with `schemas.py`, `service.py`,
-  `store.py`, and `routes.py`.
-- Route factories should expose `create_router(container)` and be registered in `py/app.py`.
-- Reuse the existing auth dependency pattern from `auth.routes`: `create_auth_router` stores `get_current_user` on the
-  auth router, and other routers can retrieve it through `container._auth_router`.
-- Keep API responses aligned with `auth.schemas.ApiResponse` unless there is a strong reason to use a different
-  contract.
-- Configuration belongs in `py/core/settings.py` and should be loaded from environment variables or `py/.env`.
-- Runtime dependencies used by the deployed Python service must be added to `py/requirements.txt`.
-- For backend verification, at minimum run `python -m py_compile` on changed Python modules. If dependencies and
-  services are available, also instantiate the app with `python -c "from app import create_app; create_app()"`.
-
-## Agent Backend Directory Rules
-
-Keep Agent backend responsibilities concentrated and avoid recreating deleted compatibility layers.
-
-- `py/agent_chat/` is the single entry point for the Agent workbench chat experience. It owns `/api/v1/agent/chat`,
-  `/api/v1/agent/chat/stream`, intent routing, model fallback, skill dispatch, trace creation, tool call summaries,
-  and response shaping.
-- `py/agent_eval/` owns Agent run persistence, trace/query APIs, feedback, eval cases, retry/cancel metadata, and
-  aggregate metrics. Do not move evaluation or run-history storage into `agent_chat`.
-- `py/skills/` contains local skill instructions and should stay workflow-focused. Add or update a skill when a task has
-  a reusable specialized process, but keep runtime orchestration in `agent_chat`.
-- Do not recreate `py/agent_runtime/`, `py/project_agent/`, or `py/langchain_examples/`. Those older directories were
-  removed to avoid parallel Agent implementations and stale compatibility APIs.
-- New Agent tools should be small, explicit functions or classes reachable from `agent_chat` through a registry-like
-  boundary. Keep tool metadata normalized with `step_id`, `node`, `status`, `input_summary`, `output_summary`,
-  `latency_ms`, `error`, and `tool_name` so the frontend and eval service can consume one trace shape.
-- Keep public Agent APIs under `/api/v1/agent/*`. Do not add new `/api/v1/project-agent/*` endpoints.
-- For frontend Agent workbench changes, keep the UI chat-first and wire it to the real streaming endpoint instead of
-  adding template buttons or fake typing flows.
-
-## Database Guidelines
-
-PostgreSQL is the preferred persistent store for new Tool Hub business features that need durable relational data.
-
-- Use SQLAlchemy 2.0 ORM for Python backend persistence and Alembic for schema migrations.
-- Keep shared SQLAlchemy infrastructure under `py/db/`, ORM models under each domain module, and migrations under
-  `py/alembic/versions`.
-- Prefer Alembic revisions for schema changes. Raw SQL files under `py/sql/` may be kept as bootstrap/reference scripts,
-  but deployed schema evolution should go through Alembic.
-- Use table names prefixed by the feature domain. For the post feature, use `post_` tables such as `post_posts`,
-  `post_comments`, and `post_likes`.
-- Use `sys_` table names for authentication, users, roles, permissions, and other system-level account data, such as
-  `sys_users`.
-- Name indexes and constraints with the same feature prefix, for example `idx_post_posts_status_created` and
-  `uq_post_likes_post_user`.
-- Use `TIMESTAMPTZ` for persisted timestamps, with `created_at` and `updated_at` columns on mutable business tables.
-- Prefer soft delete for user-generated content by using a `status` column such as `published`, `deleted`, or `hidden`.
-- The Python backend reads PostgreSQL through `POSTGRES_DSN`. In URL-style DSNs, URL-encode reserved characters in
-  passwords; for example `@` must be written as `%40`.
-- In Docker Compose, services on `linger-net` should connect to PostgreSQL by container name, for example
-  `postgres-db:5432`, not by public IP.
-- When adding or changing deployed database requirements, update both the SQL schema file and any Docker/runtime
-  configuration needed to reach the database. If Alembic is active for that schema, update or add an Alembic revision
-  instead of relying only on a raw SQL file.
-
-## Python Database Migration Commands
-
-Run Alembic migrations from the `py/` directory after adding or changing SQLAlchemy models.
-
-PowerShell local environment:
+在仓库根目录执行 Maven；若 `mvn` 不在 `PATH`，使用 `D:\app\apache-maven-3.6.3\bin\mvn.cmd`。
 
 ```powershell
-conda activate ai
-cd py
-$env:POSTGRES_DSN="postgresql+psycopg2://user:password@localhost:5432/database"
-python -m alembic upgrade head
+mvn -pl module -am test
+mvn -pl module -am clean package
+mvn -pl leetcode-editor -am test
+mvn -DskipTests package
 ```
 
-For the Agent evaluation tables added in revision `20260518_0004`, either migrate to the latest head:
+- 测试使用 JUnit 5，放在对应模块的 `src/test/java`，类名以 `*Test` 结尾。
+- 单元测试应快速、聚焦；仅在必要时添加集成测试。
+- 测试中可使用 `@Slf4j` 输出关键结果。交付时说明执行过的命令和结果。
+
+## Java 与 MyBatis-Plus
+
+### 基础约束
+
+- 当前基线：Spring Boot `2.7.18`、MyBatis-Plus `3.5.17`、PostgreSQL。
+- 保留父 POM 的 BOM 版本和 `mybatis-plus-jsqlparser-4.9` 兼容依赖，不要单独升级其中一个组件。
+- Mapper 扫描和拦截器统一维护在 `MybatisPlusConfiguration`，不要重复创建配置 Bean。
+- 拦截器顺序：SQL 改写类在前，分页和乐观锁居中，分析或防攻击类在后。
+- 持久化统一使用 MyBatis-Plus，不要引入或继续使用 `JdbcTemplate`。
+
+### 分层与模型
+
+- Controller 请求参数使用明确的 DTO/Query/Command 类，不使用 `Map<String, Object>`。
+- Service 使用 Lombok 构造器注入；业务规则、事务编排和 DTO 转换放在 Service 或 Repository/Store。
+- 通用审计字段抽到基础实体；时间字段使用 `OffsetDateTime`，数值可空字段优先使用包装类型。
+- 分页参数和结果复用公共 `PageQuery`、`PageResult`，在 API 边界校验页码并限制每页大小。
+- 普通下划线字段依赖 `map-underscore-to-camel-case: true`，不要重复写无意义的 `@TableField`。
+- 实体明确声明 `@TableName`、`@TableId`；主键策略必须与数据库真实生成方式一致。
+- `@TableField` 只用于特殊映射、非持久化字段、自动填充或类型处理器；结果也需类型处理器时启用 `autoResultMap`。
+- 删除继续使用领域 `status`，未经整体迁移和测试不要单独引入 `@TableLogic`。
+
+### Mapper 与查询
+
+- Mapper 接口继承 `BaseMapper<Entity>`，只保留方法声明和必要的 `@Param`。
+- 自定义 SQL 统一放在 `module/src/main/resources/mapper/` 的对应 XML；禁止在 Mapper 中使用 SQL 注解、Provider 或注解内 `<script>`。
+- 单表常规查询优先使用 `LambdaQueryWrapper`、`LambdaUpdateWrapper`，不要用字符串字段名。
+- 联表、聚合、投影、锁、PostgreSQL 特性和原子状态迁移使用 Mapper XML。
+- Wrapper 必须在执行方法内创建，不缓存、不共享、不复用，也不暴露给 Controller 或公共服务接口。
+- 可选条件使用 Wrapper 的条件重载；更新、删除或权限查询前必须拒绝空 ID、空集合和空归属条件。
+- `selectOne` 仅用于数据库约束保证唯一的条件，禁止用任意 `LIMIT 1` 掩盖重复数据。
+- 列表查询只取需要的列，分页必须有稳定排序；禁止循环调用 Mapper，避免 N+1。
+
+### SQL 安全、事务与并发
+
+- 不拼接用户输入到 SQL、列名或排序片段；客户端排序键必须经过后端白名单映射。
+- 不向 `apply`、`last`、`having`、`inSql`、`setSql`、`orderBy` 等方法传入不可信文本。
+- XML 参数使用 `#{}`；`${}` 仅允许固定且经过白名单验证的 SQL 结构。
+- 请求 DTO 不得直接传给 `insert`、`updateById` 或 `saveOrUpdate`，只映射允许修改的字段。
+- 所有更新和删除都要有明确业务条件，并检查影响行数；零行更新不能默认视为成功。
+- 乐观锁实体声明并初始化 `@Version`；状态迁移在 `WHERE` 中校验旧状态或旧版本，并原子更新版本。
+- 计数、库存、抢占和状态变更使用单条条件 SQL，不采用先查再改。
+- 多表写入和批处理放在公开的 `@Transactional` Service 方法中；不要依赖同类自调用开启事务。
+- 大集合使用分批处理并限制批次大小；需要原子性时显式开启事务。
+
+
+## Tool Hub 前端
+
+- `tool-hub/` 使用 Vue 3、Vite、Vuetify；API 统一通过 `src/utils/request.ts`。
+- 页面放在 `src/views` 并按领域分组；路由及导航元数据统一维护在 `src/router/index.ts`。
+- 仅需要登录的页面设置 `requiresAuth: true`；公开只读页面保持公开。
+- 导航分组在 `AppNavigation.vue` 中维护；新页面补充 `title`、`description`、`icon`、`keywords`、`featured`。
+- 优先使用 Vuetify、Material Design Icons 和成熟组件，不手写已有组件能覆盖的基础交互。
+- 样式使用 `src/main.css` 的颜色、间距、圆角、阴影变量和公共类，禁止硬编码颜色或创建一次性视觉体系。
+- 保持内部工具风格：信息紧凑、层级清楚、边框克制、操作直接，避免营销式首屏和装饰性渐变。
+- 工具页优先使用 `ToolPageLayout`；布局已显示标题时不要重复写 `<h1>`，全屏工作区使用 `:card="false"`。
+- 避免会影响 Vuetify 的全局 `button`、`input`、`textarea` 样式。
+- 股票图表、编辑器、地图、拖拽、虚拟表格等复杂组件优先采用成熟库并遵循领域惯例。
+- 前端只做静态检查、单元测试和 `npm run build`；不要运行浏览器自动化、打开 localhost 或截图验收。
+
+## Python 后端
+
+- `py/` 是 FastAPI 应用，本地命令先执行 `conda activate ai`。
+- 新功能按领域放在 `py/<domain>/`，通常包含 `schemas.py`、`service.py`、`store.py`、`routes.py`。
+- 路由工厂使用 `create_router(container)` 并在 `py/app.py` 注册；鉴权复用现有 `auth.routes` 模式。
+- API 响应尽量复用 `auth.schemas.ApiResponse`；配置放在 `py/core/settings.py`，从环境变量或 `py/.env` 读取。
+- 部署所需依赖必须加入 `py/requirements.txt`，不能只修改本地环境文件。
+- 修改后至少对相关文件运行 `python -m py_compile`；条件允许时执行应用实例化检查。
+
+## Agent 后端边界
+
+- `py/agent_chat/` 负责 `/api/v1/agent/*` 聊天入口、路由、模型回退、Skill 调度、Trace 和响应整形。
+- `py/agent_eval/` 负责运行记录、查询、反馈、评测用例、重试/取消和指标持久化。
+- `py/skills/` 只保存可复用工作流说明，运行时编排仍放在 `agent_chat`。
+- 不要恢复已删除的 `py/agent_runtime/`、`py/project_agent/`、`py/langchain_examples/`，也不要新增 `/api/v1/project-agent/*`。
+- Agent 工具保持小而明确，并统一输出 `step_id`、`node`、`status`、输入/输出摘要、耗时、错误和工具名。
+- Agent 工作台保持聊天优先，使用真实流式接口，不添加模拟输入或模板式假交互。
+
+## 数据库与迁移
+
+- 新的持久化业务优先使用 PostgreSQL、SQLAlchemy 2.0 ORM 和 Alembic。
+- 公共数据库设施放在 `py/db/`，模型归属各领域，迁移放在 `py/alembic/versions/`。
+- 业务表使用领域前缀，如 `post_`；系统账户和权限表使用 `sys_`；索引和约束同样使用领域前缀。
+- 时间字段使用 `TIMESTAMPTZ`；可变业务表包含 `created_at`、`updated_at`；用户内容优先用状态软删除。
+- 数据库连接读取 `POSTGRES_DSN`，密码保留字符需 URL 编码；Compose 内使用容器名和内部端口连接。
+- Schema 变化使用 Alembic，不只维护 `py/sql/` 参考脚本；同时更新部署连接和依赖配置。
 
 ```powershell
 conda activate ai
 cd py
 python -m alembic upgrade head
-```
-
-or migrate directly to that revision:
-
-```powershell
-conda activate ai
-cd py
-python -m alembic upgrade 20260518_0004
-```
-
-Verify the applied revision:
-
-```powershell
-conda activate ai
-cd py
 python -m alembic current
-python -m alembic history --verbose
 ```
 
-If running inside Docker Compose, execute Alembic in the Python API container with the deployed `POSTGRES_DSN`:
+## 部署与协议
 
-```powershell
-docker compose exec langgraph-api python -m alembic upgrade head
-docker compose exec langgraph-api python -m alembic current
-```
-
-If the backend logs `Agent 评测表不可用，请先运行 Alembic 迁移`, the app can still answer Agent chat requests, but
-Agent metrics and feedback will not be persisted until the migration has created `agent_runs`, `agent_tool_calls`,
-`agent_feedback`, `agent_eval_cases`, and `agent_eval_results`.
-
-## Dependency & Deployment Notes
-
-- When adding new runtime components or protocols, update the actual deployment dependency files, not only local
-  environment exports. For the Python Docker backend, `py/Dockerfile` installs from `py/requirements.txt`; packages
-  listed only in `py/ai.yaml` are not included in the deployed image.
-- Pay special attention to optional runtime extras required by new components. For example, FastAPI WebSocket routes
-  served by Uvicorn require `uvicorn[standard]`, `websockets`, or `wsproto`; otherwise upgrade requests can be logged as
-  unsupported and handled as plain HTTP requests.
-- After introducing frontend features that depend on backend protocols such as WebSocket or SSE, verify both the
-  browser request and the container logs in the deployed environment.
-
-## Skill Routing
-
-Use the local skills under `skills/` when the request clearly matches one of the workflows below. Prefer the most
-specific skill that fits the task. If the user explicitly names a skill, use that skill.
-
-- `nl-to-sql-generator`
-  Use for natural language plus schema input when the task is to generate read-only SQL only. Do not execute SQL in
-  this skill.
-
-- `sql-exporter`
-  Use for an existing SQL statement plus database connection details when the task is to validate, execute, or export
-  query results. Do not invent SQL from a business question in this skill.
-
-- `java-stacktrace-analyzer`
-  Use for Java, Spring Boot, Maven, Gradle, JDBC, or test stack traces when the task is to identify the root cause and
-  propose fixes.
-
-## Skill Usage Notes
-
-- Ask for missing schema details before using `nl-to-sql-generator`.
-- Ask for missing SQL or connection details before using `sql-exporter`.
-- For Java error analysis, prioritize the deepest actionable `Caused by` chain instead of top-level wrapper exceptions.
-- Keep skill responsibilities separate. Do not let `sql-exporter` generate SQL, and do not let
-  `java-stacktrace-analyzer` modify code unless the user asks for code changes after the diagnosis.
+- Python Docker 镜像从 `py/requirements.txt` 安装依赖，新增运行时组件时同步更新该文件。
+- WebSocket/SSE 等协议需要同步检查依赖、前端请求和容器日志；Uvicorn WebSocket 必须具备对应运行时依赖。
