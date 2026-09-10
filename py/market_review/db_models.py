@@ -1,13 +1,13 @@
 from datetime import date, datetime
 from decimal import Decimal
 
-from db.base import Base
+from db.base import AuditMixin, Base
 from sqlalchemy import Date, DateTime, Index, Integer, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 
-class MarketReviewRun(Base):
+class MarketReviewRun(AuditMixin, Base):
     __tablename__ = "market_review_runs"
     __table_args__ = (
         UniqueConstraint("trade_date", "source", name="uq_market_review_runs_date_source"),
@@ -25,7 +25,7 @@ class MarketReviewRun(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
 
 
-class MarketLimitUpPool(Base):
+class MarketLimitUpPool(AuditMixin, Base):
     __tablename__ = "market_limit_up_pool"
     __table_args__ = (
         UniqueConstraint("trade_date", "code", name="uq_market_limit_up_pool_date_code"),
@@ -56,7 +56,7 @@ class MarketLimitUpPool(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
 
 
-class MarketSectorStrength(Base):
+class MarketSectorStrength(AuditMixin, Base):
     __tablename__ = "market_sector_strength"
     __table_args__ = (
         UniqueConstraint("trade_date", "industry", name="uq_market_sector_strength_date_industry"),
@@ -80,7 +80,7 @@ class MarketSectorStrength(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
 
 
-class MarketCandidatePool(Base):
+class MarketCandidatePool(AuditMixin, Base):
     __tablename__ = "market_candidate_pool"
     __table_args__ = (
         UniqueConstraint("trade_date", "pool_type", "code", name="uq_market_candidate_pool_date_type_code"),
@@ -103,7 +103,7 @@ class MarketCandidatePool(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
 
 
-class MarketReviewSignal(Base):
+class MarketReviewSignal(AuditMixin, Base):
     __tablename__ = "market_review_signal"
     __table_args__ = (
         UniqueConstraint("trade_date", "signal_type", "code", name="uq_market_review_signal_date_type_code"),
@@ -126,7 +126,7 @@ class MarketReviewSignal(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
 
 
-class MarketRadarSectorSnapshot(Base):
+class MarketRadarSectorSnapshot(AuditMixin, Base):
     __tablename__ = "market_radar_sector_snapshot"
     __table_args__ = (
         UniqueConstraint("trade_date", "sector_type", "sector_name", name="uq_market_radar_sector_date_type_name"),
@@ -154,7 +154,7 @@ class MarketRadarSectorSnapshot(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
 
 
-class MarketRadarCandidateSnapshot(Base):
+class MarketRadarCandidateSnapshot(AuditMixin, Base):
     __tablename__ = "market_radar_candidate_snapshot"
     __table_args__ = (
         UniqueConstraint("trade_date", "code", "signal_type", name="uq_market_radar_candidate_date_code_signal"),
@@ -181,7 +181,7 @@ class MarketRadarCandidateSnapshot(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
 
 
-class MarketStockKlineDaily(Base):
+class MarketStockKlineDaily(AuditMixin, Base):
     __tablename__ = "market_stock_kline_daily"
     __table_args__ = (
         UniqueConstraint("trade_date", "code", name="uq_market_stock_kline_daily_date_code"),
@@ -207,7 +207,7 @@ class MarketStockKlineDaily(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
 
 
-class MarketStockUniverse(Base):
+class MarketStockUniverse(AuditMixin, Base):
     __tablename__ = "market_stock_universe"
     __table_args__ = (
         Index("idx_market_stock_universe_status_code", "status", "code"),
@@ -222,7 +222,7 @@ class MarketStockUniverse(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
 
 
-class MarketStockKlineIntraday(Base):
+class MarketStockKlineIntraday(AuditMixin, Base):
     __tablename__ = "market_stock_kline_intraday"
     __table_args__ = (
         UniqueConstraint("bar_time", "code", "period", name="uq_market_stock_kline_intraday_time_code_period"),

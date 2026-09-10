@@ -1,11 +1,11 @@
 from datetime import datetime
 
-from db.base import Base
+from db.base import AuditMixin, Base
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 
-class AgentRun(Base):
+class AgentRun(AuditMixin, Base):
     __tablename__ = "agent_runs"
     __table_args__ = (
         Index("idx_agent_runs_route_created", "route", "created_at"),
@@ -33,9 +33,10 @@ class AgentRun(Base):
     model_name: Mapped[str] = mapped_column(String(128), nullable=False, server_default=text("'unknown'"))
     error_message: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
 
 
-class AgentToolCall(Base):
+class AgentToolCall(AuditMixin, Base):
     __tablename__ = "agent_tool_calls"
     __table_args__ = (
         Index("idx_agent_tool_calls_run", "run_id"),
@@ -52,9 +53,10 @@ class AgentToolCall(Base):
     output_payload: Mapped[dict | None] = mapped_column(JSON)
     error_message: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
 
 
-class AgentFeedback(Base):
+class AgentFeedback(AuditMixin, Base):
     __tablename__ = "agent_feedback"
     __table_args__ = (
         Index("idx_agent_feedback_run", "run_id"),
@@ -72,9 +74,10 @@ class AgentFeedback(Base):
     hallucination_reported: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     feedback_text: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
 
 
-class AgentEvalCase(Base):
+class AgentEvalCase(AuditMixin, Base):
     __tablename__ = "agent_eval_cases"
     __table_args__ = (
         Index("idx_agent_eval_cases_route_status", "route", "status"),
@@ -92,7 +95,7 @@ class AgentEvalCase(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
 
 
-class AgentEvalResult(Base):
+class AgentEvalResult(AuditMixin, Base):
     __tablename__ = "agent_eval_results"
     __table_args__ = (
         Index("idx_agent_eval_results_case", "case_id", "created_at"),
@@ -111,3 +114,4 @@ class AgentEvalResult(Base):
     passed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     judge_reason: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))

@@ -1,12 +1,12 @@
 from datetime import datetime
 
-from db.base import Base
+from db.base import AuditMixin, Base
 from sqlalchemy import DateTime, Index, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 
-class SysUser(Base):
+class SysUser(AuditMixin, Base):
     __tablename__ = "sys_users"
     __table_args__ = (
         Index("idx_sys_users_status_created", "status", "created_at"),

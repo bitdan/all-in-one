@@ -1,11 +1,11 @@
 from datetime import datetime
 
-from db.base import Base
+from db.base import AuditMixin, Base
 from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 
-class Post(Base):
+class Post(AuditMixin, Base):
     __tablename__ = "post_posts"
     __table_args__ = (
         Index("idx_post_posts_status_created", "status", "created_at"),
@@ -26,7 +26,7 @@ class Post(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
 
 
-class PostComment(Base):
+class PostComment(AuditMixin, Base):
     __tablename__ = "post_comments"
     __table_args__ = (
         Index("idx_post_comments_post", "post_id", "created_at"),
@@ -45,7 +45,7 @@ class PostComment(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
 
 
-class PostLike(Base):
+class PostLike(AuditMixin, Base):
     __tablename__ = "post_likes"
     __table_args__ = (
         UniqueConstraint("post_id", "user_id", name="uq_post_likes_post_user"),
@@ -56,9 +56,10 @@ class PostLike(Base):
     post_id: Mapped[str] = mapped_column(String(64), ForeignKey("post_posts.id", ondelete="CASCADE"), nullable=False)
     user_id: Mapped[str] = mapped_column(String(128), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
 
 
-class PostTag(Base):
+class PostTag(AuditMixin, Base):
     __tablename__ = "post_post_tags"
     __table_args__ = (
         UniqueConstraint("post_id", "tag_name", name="uq_post_post_tags_post_tag"),
@@ -69,3 +70,5 @@ class PostTag(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     post_id: Mapped[str] = mapped_column(String(64), ForeignKey("post_posts.id", ondelete="CASCADE"), nullable=False)
     tag_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
