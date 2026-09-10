@@ -2,8 +2,8 @@ package com.linger.module.redisson;
 
 
 import com.linger.module.redisson.service.RedissonService;
+import com.linger.module.common.http.HttpResponseData;
 import com.linger.module.util.HttpUtil;
-import okhttp3.Response;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,6 +39,9 @@ public class RedissonConcurrentTest {
     @Autowired
     private RedissonService redissonService;
 
+    @Autowired
+    private HttpUtil httpUtil;
+
     private final String url = "http://localhost:9999/redis/grabTask";
 
     @Test
@@ -56,12 +59,11 @@ public class RedissonConcurrentTest {
                             .toUriString();
 
                     try {
-                        Response response = HttpUtil.doGet(fullUrl, null);
-                        int responseCode = response.code();
-                        String body = response.body() != null ? response.body().string() : "";
+                        HttpResponseData response = httpUtil.get(fullUrl, null);
+                        int responseCode = response.getStatusCode();
+                        String body = response.bodyAsString();
 
                         System.out.println("用户 " + userId + " => 响应码: " + responseCode + "，内容: " + body);
-                        response.close();
                     } catch (Exception e) {
                         System.err.println("用户 " + userId + " 请求异常：" + e.getMessage());
                     }

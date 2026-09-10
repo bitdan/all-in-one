@@ -2,7 +2,7 @@ package com.linger.module.common.page;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.linger.module.util.JsonUtils;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.MutablePropertyValues;
 import org.springframework.web.bind.WebDataBinder;
@@ -34,7 +34,7 @@ class PageQueryTest {
     void shouldSerializePageResultWithSnakeCaseNaming() {
         PageResult<String> result = new PageResult<>(java.util.Collections.singletonList("item"), 1L, 2L, 20L);
 
-        JsonNode json = new ObjectMapper().valueToTree(result);
+        JsonNode json = JsonUtils.objectMapper.valueToTree(result);
 
         assertTrue(json.has("page_size"));
         assertFalse(json.has("pageSize"));
