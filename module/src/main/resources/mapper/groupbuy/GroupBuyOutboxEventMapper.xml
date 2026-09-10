@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.linger.module.groupbuy.transaction.mapper.GroupBuyOutboxEventMapper">
+
+    <insert id="insertEvent">
+        INSERT INTO groupbuy_outbox_events(id, event_type, aggregate_type, aggregate_id, payload)
+        VALUES (#{id}, #{eventType}, #{aggregateType}, #{aggregateId}, CAST(#{payload} AS JSONB))
+    </insert>
+
+    <select id="claimBatch" resultType="com.linger.module.groupbuy.transaction.entity.GroupBuyOutboxEventEntity">
+        WITH candidates AS (
+            SELECT id
+            FROM groupbuy_outbox_events
+            WHERE (status = 'PENDING'
+                OR (status = 'PROCESSING' AND locked_until &lt; NOW()))
+              AND available_at &lt;= NOW()
+            ORDER BY available_at
+            LIMIT #{limit}
+            FOR UPDATE SKIP LOCKED
+        )
+        UPDATE groupbuy_outbox_events e
+        SET status = 'PROCESSING',
+            locked_by = #{workerId},
+            updated_by = 0,
+            locked_until = NOW() + INTERVAL '30 seconds',
+            updated_at = NOW()
+        FROM candidates c
+        WHERE e.id = c.id
+        RETURNING e.*
+    </select>
+
+    <update id="markDone">
+        UPDATE groupbuy_outbox_events
+        SET status = 'DONE',
+            locked_by = NULL,
+            locked_until = NULL,
+            updated_by = 0,
+            updated_at = NOW()
+        WHERE id = #{id}
+          AND status = 'PROCESSING'
+          AND locked_by = #{workerId}
+    </update>
+
+    <update id="markFailed">
+        UPDATE groupbuy_outbox_events
+        SET status = CASE
+                WHEN retry_count + 1 >= #{maxRetries} THEN 'DEAD'
+                ELSE 'PENDING'
+            END,
+            retry_count = retry_count + 1,
+            available_at = NOW() + (INTERVAL '1 second' * #{delaySeconds}),
+            last_error = #{error},
+            locked_by = NULL,
+            locked_until = NULL,
+            updated_by = 0,
+            updated_at = NOW()
+        WHERE id = #{id}
+          AND locked_by = #{workerId}
+    </update>
+</mapper>

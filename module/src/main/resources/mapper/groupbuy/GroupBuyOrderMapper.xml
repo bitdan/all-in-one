@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.linger.module.groupbuy.transaction.mapper.GroupBuyOrderMapper">
+
+    <select id="selectByUserRequest" resultType="com.linger.module.groupbuy.transaction.entity.GroupBuyOrderEntity">
+        SELECT *
+        FROM groupbuy_orders
+        WHERE user_id = #{userId}
+          AND request_id = #{requestId}
+    </select>
+
+    <update id="markWaitPay">
+        UPDATE groupbuy_orders
+        SET status = 'WAIT_PAY', reservation_id = #{reservationId}, pay_deadline = #{payDeadline},
+            version = version + 1, updated_by = 0, updated_at = NOW()
+        WHERE id = #{orderId} AND status = 'INIT'
+    </update>
+
+    <update id="markRejected">
+        UPDATE groupbuy_orders
+        SET status = 'REJECTED', reject_reason = #{reason}, version = version + 1,
+            updated_by = 0, updated_at = NOW()
+        WHERE id = #{orderId} AND status = 'INIT'
+    </update>
+
+    <update id="markPaid">
+        UPDATE groupbuy_orders
+        SET status = 'PAID', payment_no = #{paymentNo}, paid_at = #{paidAt}, version = version + 1,
+            updated_by = 0, updated_at = NOW()
+        WHERE id = #{orderId} AND status = 'WAIT_PAY'
+    </update>
+
+    <update id="cancelUnpaid">
+        UPDATE groupbuy_orders
+        SET status = 'CANCELLED', version = version + 1, updated_by = 0, updated_at = NOW()
+        WHERE id = #{orderId} AND status = 'WAIT_PAY'
+    </update>
+
+    <update id="markGroupSuccess">
+        UPDATE groupbuy_orders
+        SET status = 'GROUP_SUCCESS', version = version + 1, updated_by = 0, updated_at = NOW()
+        WHERE group_id = #{groupId} AND status = 'PAID'
+    </update>
+
+    <update id="markRefundingByGroup">
+        UPDATE groupbuy_orders
+        SET status = 'REFUNDING', version = version + 1, updated_by = 0, updated_at = NOW()
+        WHERE group_id = #{groupId} AND status = 'PAID'
+    </update>
+
+    <update id="markRefunding">
+        UPDATE groupbuy_orders
+        SET status = 'REFUNDING', version = version + 1, updated_by = 0, updated_at = NOW()
+        WHERE id = #{orderId} AND status = 'PAID'
+    </update>
+
+    <update id="markRefunded">
+        UPDATE groupbuy_orders
+        SET status = 'REFUNDED', version = version + 1, updated_by = 0, updated_at = NOW()
+        WHERE id = #{orderId} AND status = 'REFUNDING'
+    </update>
+
+    <select id="selectStaleInit" resultType="com.linger.module.groupbuy.transaction.entity.GroupBuyOrderEntity">
+        SELECT *
+        FROM groupbuy_orders
+        WHERE status = 'INIT'
+          AND created_at &lt; #{before}
+        ORDER BY created_at
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectExpiredUnpaid" resultType="com.linger.module.groupbuy.transaction.entity.GroupBuyOrderEntity">
+        SELECT *
+        FROM groupbuy_orders
+        WHERE status = 'WAIT_PAY'
+          AND pay_deadline &lt;= NOW()
+        ORDER BY pay_deadline
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectByGroupId" resultType="com.linger.module.groupbuy.transaction.entity.GroupBuyOrderEntity">
+        SELECT *
+        FROM groupbuy_orders
+        WHERE group_id = #{groupId}
+    </select>
+</mapper>

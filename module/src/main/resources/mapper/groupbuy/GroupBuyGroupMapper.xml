@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.linger.module.groupbuy.transaction.mapper.GroupBuyGroupMapper">
+
+    <select id="selectForUpdate" resultType="com.linger.module.groupbuy.transaction.entity.GroupBuyGroupEntity">
+        SELECT *
+        FROM groupbuy_groups
+        WHERE id = #{id}
+        FOR UPDATE
+    </select>
+
+    <update id="markOpen">
+        UPDATE groupbuy_groups
+        SET status = 'OPEN', version = version + 1, updated_by = 0, updated_at = NOW()
+        WHERE id = #{id} AND status = 'INIT'
+    </update>
+
+    <update id="incrementReserved">
+        UPDATE groupbuy_groups
+        SET reserved_count = reserved_count + 1,
+            version = version + 1,
+            updated_by = 0,
+            updated_at = NOW()
+        WHERE id = #{id}
+          AND status = 'OPEN'
+          AND reserved_count &lt; target_count
+    </update>
+
+    <update id="decrementReserved">
+        UPDATE groupbuy_groups
+        SET reserved_count = GREATEST(reserved_count - 1, 0),
+            version = version + 1,
+            updated_by = 0,
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="incrementPaid">
+        UPDATE groupbuy_groups
+        SET paid_count = paid_count + 1,
+            version = version + 1,
+            updated_by = 0,
+            updated_at = NOW()
+        WHERE id = #{id}
+          AND status = 'OPEN'
+          AND paid_count &lt; target_count
+    </update>
+
+    <update id="decrementPaidAndReserved">
+        UPDATE groupbuy_groups
+        SET paid_count = GREATEST(paid_count - 1, 0),
+            reserved_count = GREATEST(reserved_count - 1, 0),
+            version = version + 1,
+            updated_by = 0,
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="markSuccess">
+        UPDATE groupbuy_groups
+        SET status = 'SUCCESS', version = version + 1, updated_by = 0, updated_at = NOW()
+        WHERE id = #{id}
+          AND status = 'OPEN'
+          AND paid_count >= target_count
+    </update>
+
+    <update id="markFailedIfExpired">
+        UPDATE groupbuy_groups
+        SET status = 'FAILED', version = version + 1, updated_by = 0, updated_at = NOW()
+        WHERE id = #{id}
+          AND status = 'OPEN'
+          AND expire_at &lt;= NOW()
+    </update>
+</mapper>

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.linger.module.toolhub.post.mapper.PostTagMapper">
+
+    <insert id="insertBatch">
+        INSERT INTO post_post_tags
+            (post_id, tag_name, created_by, updated_by, created_at, updated_at)
+        VALUES
+        <foreach collection="tags" item="tag" separator=",">
+            (#{tag.postId}, #{tag.tagName}, #{tag.createdBy}, #{tag.updatedBy},
+             #{tag.createdAt}, #{tag.updatedAt})
+        </foreach>
+    </insert>
+</mapper>

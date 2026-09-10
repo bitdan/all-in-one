@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.linger.module.toolhub.post.mapper.PostMapper">
+
+    <select id="selectPostPage" resultType="com.linger.module.toolhub.post.entity.PostEntity">
+        SELECT p.id,
+               p.title,
+               p.category,
+               p.author_id,
+               p.author_name,
+               p.view_count,
+               p.like_count,
+               p.comment_count,
+               p.created_at,
+               p.updated_at
+        FROM post_posts p
+        WHERE p.status = 'published'
+        <if test="query.keyword != null and query.keyword != ''">
+            AND (p.title ILIKE '%' || #{query.keyword} || '%'
+                OR p.content ILIKE '%' || #{query.keyword} || '%')
+        </if>
+        <if test="query.category != null and query.category != ''">
+            AND p.category = #{query.category}
+        </if>
+        <if test="query.tag != null and query.tag != ''">
+            AND EXISTS (
+                SELECT 1
+                FROM post_post_tags t
+                WHERE t.post_id = p.id
+                  AND t.tag_name = #{query.tag}
+            )
+        </if>
+        ORDER BY p.created_at DESC, p.id DESC
+    </select>
+
+    <update id="incrementViewCount">
+        UPDATE post_posts
+        SET view_count = view_count + 1
+        WHERE id = #{postId}
+          AND status = 'published'
+    </update>
+
+    <update id="incrementCommentCount">
+        UPDATE post_posts
+        SET comment_count = comment_count + 1,
+            updated_by = #{actorId},
+            updated_at = NOW()
+        WHERE id = #{postId}
+          AND status = 'published'
+    </update>
+</mapper>

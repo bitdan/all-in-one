@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.linger.module.groupbuy.transaction.mapper.GroupBuyInventoryLedgerMapper">
+
+    <insert id="insertIgnore">
+        INSERT INTO groupbuy_inventory_ledger(activity_id, sku_id, order_id, operation, quantity)
+        VALUES (#{activityId}, #{skuId}, #{orderId}, #{operation}, #{quantity})
+        ON CONFLICT DO NOTHING
+    </insert>
+</mapper>
