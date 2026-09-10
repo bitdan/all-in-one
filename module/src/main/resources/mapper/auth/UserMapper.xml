@@ -13,9 +13,9 @@
         <result property="status" column="status"
                 typeHandler="com.baomidou.mybatisplus.core.handlers.MybatisEnumTypeHandler"/>
         <result property="roles" column="roles"
-                typeHandler="com.linger.module.toolhub.auth.handler.StringListJsonTypeHandler"/>
+                typeHandler="com.linger.module.common.persistence.handler.StringListJsonTypeHandler"/>
         <result property="permissions" column="permissions"
-                typeHandler="com.linger.module.toolhub.auth.handler.StringListJsonTypeHandler"/>
+                typeHandler="com.linger.module.common.persistence.handler.StringListJsonTypeHandler"/>
         <result property="lastLoginAt" column="last_login_at"/>
         <result property="createdBy" column="created_by"/>
         <result property="updatedBy" column="updated_by"/>

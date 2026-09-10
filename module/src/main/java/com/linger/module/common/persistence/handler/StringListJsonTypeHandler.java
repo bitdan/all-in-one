@@ -1,4 +1,4 @@
-package com.linger.module.toolhub.auth.handler;
+package com.linger.module.common.persistence.handler;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.linger.module.util.JsonUtils;
