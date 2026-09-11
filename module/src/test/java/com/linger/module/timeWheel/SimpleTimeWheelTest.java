@@ -39,6 +39,9 @@ public class SimpleTimeWheelTest {
         System.out.println("任务完成状态: " + completed);
         System.out.println("计数器值: " + counter.get());
 
+        assertTrue(completed);
+        assertEquals(1, counter.get());
+
         scheduler.stop();
         System.out.println("测试完成");
     }
@@ -68,6 +71,9 @@ public class SimpleTimeWheelTest {
 
         System.out.println("所有任务完成状态: " + completed);
         System.out.println("最终计数器值: " + counter.get());
+
+        assertTrue(completed);
+        assertEquals(3, counter.get());
 
         scheduler.stop();
         System.out.println("测试完成");
@@ -333,6 +339,41 @@ public class SimpleTimeWheelTest {
         assertEquals(3, counter.get());
 
         scheduler.stop();
+    }
+
+    @Test
+    public void testTaskBeyondFirstWheelInterval() throws InterruptedException {
+        TimeWheelScheduler scheduler = new TimeWheelScheduler(20, 5);
+        scheduler.start();
+
+        try {
+            CountDownLatch latch = new CountDownLatch(1);
+            long startNanos = System.nanoTime();
+
+            scheduler.schedule(250, TimeUnit.MILLISECONDS, latch::countDown);
+
+            assertTrue(latch.await(1, TimeUnit.SECONDS),
+                    "超过第一层时间轮间隔的任务也应被重新分配并执行");
+            long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
+            assertTrue(elapsedMillis >= 200, "任务不应明显早于指定延迟执行");
+        } finally {
+            scheduler.stop();
+        }
+    }
+
+    @Test
+    public void testRejectsInvalidScheduleArguments() {
+        TimeWheelScheduler scheduler = new TimeWheelScheduler();
+        scheduler.start();
+
+        try {
+            assertThrows(IllegalArgumentException.class,
+                    () -> scheduler.schedule(-1, TimeUnit.MILLISECONDS, () -> { }));
+            assertThrows(NullPointerException.class,
+                    () -> scheduler.schedule(1, TimeUnit.MILLISECONDS, null));
+        } finally {
+            scheduler.stop();
+        }
     }
 
     @Test

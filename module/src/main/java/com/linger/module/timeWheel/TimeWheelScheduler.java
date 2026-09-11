@@ -1,5 +1,8 @@
 package com.linger.module.timeWheel;
 
+import lombok.extern.slf4j.Slf4j;
+
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -8,6 +11,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * 时间轮调度器，提供便捷的API来使用时间轮
  */
+@Slf4j
 public class TimeWheelScheduler {
 
     private final TimeWheel timeWheel;
@@ -64,21 +68,29 @@ public class TimeWheelScheduler {
         if (!started) {
             throw new IllegalStateException("Scheduler is not started");
         }
+        if (delay < 0) {
+            throw new IllegalArgumentException("delay must not be negative");
+        }
 
-        long delayMs = unit.toMillis(delay);
-        TimerTask timerTask = new TimerTask(delayMs, () -> {
-            try {
-                taskExecutor.submit(task);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        });
+        long delayMs = Objects.requireNonNull(unit, "unit must not be null").toMillis(delay);
+        Runnable scheduledTask = Objects.requireNonNull(task, "task must not be null");
+        TimerTask timerTask = new TimerTask(delayMs, () -> submit(scheduledTask));
 
         boolean added = timeWheel.addTask(timerTask);
         if (!added) {
             // 如果任务无法添加到时间轮（已过期），立即执行
-            taskExecutor.submit(task);
+            submit(scheduledTask);
         }
+    }
+
+    private void submit(Runnable task) {
+        taskExecutor.submit(() -> {
+            try {
+                task.run();
+            } catch (RuntimeException e) {
+                log.error("Scheduled task execution failed", e);
+            }
+        });
     }
 
     /**

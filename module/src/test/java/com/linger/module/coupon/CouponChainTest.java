@@ -2,11 +2,14 @@ package com.linger.module.coupon;
 
 import com.linger.module.coupon.model.Coupon;
 import com.linger.module.coupon.model.Order;
+import com.linger.module.coupon.handler.DiscountHandler;
+import com.linger.module.coupon.handler.FullReductionHandler;
+import com.linger.module.coupon.handler.NoThresholdHandler;
 import com.linger.module.coupon.service.CouponChainService;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
+
+import java.util.Arrays;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -15,12 +18,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * @description CouponChainTest
  * @date 2025/7/24 16:58:04
  */
-@SpringBootTest
 @Slf4j
 public class CouponChainTest {
 
-    @Autowired
-    private CouponChainService chainService;
+    private final CouponChainService chainService = new CouponChainService(Arrays.asList(
+            new NoThresholdHandler(),
+            new DiscountHandler(),
+            new FullReductionHandler()
+    ));
 
     @Test
     public void testFullReductionFirst() {

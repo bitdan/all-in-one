@@ -7,7 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
-import java.text.DecimalFormat;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -20,8 +20,6 @@ import java.util.stream.Collectors;
 @Order(2)
 @Slf4j
 public class DiscountHandler extends AbstractCouponHandler {
-    private static final DecimalFormat discountFormat = new DecimalFormat("#.#");
-
     @Override
     protected boolean canApply(CouponContext context) {
         return context.getOrder().getCoupons().stream()
@@ -54,7 +52,7 @@ public class DiscountHandler extends AbstractCouponHandler {
             context.getAppliedCoupons().add(coupon);
 
             // 正确计算和显示折扣比例
-            int discountPercent = (int) ((1 - discountRate) * 100);
+            int discountPercent = (int) Math.round((1 - discountRate) * 100);
             String discountDisplay = formatDiscount(discountRate);
 
             log.info("应用折扣券: {}元 -> {}元 ({}折, 优惠{}%)",
@@ -63,7 +61,7 @@ public class DiscountHandler extends AbstractCouponHandler {
 
         double after = context.getCurrentPrice();
         if (!coupons.isEmpty()) {
-            log.debug("折扣券处理完成: {}元 -> {}元 (变化: -{:.2f}元)",
+            log.debug("折扣券处理完成: {}元 -> {}元 (变化: -{}元)",
                     before, after, before - after);
         }
     }
@@ -73,6 +71,6 @@ public class DiscountHandler extends AbstractCouponHandler {
         // 计算实际折扣比例 (1/折扣率)
         double actualDiscount = 10 * discountRate;
 
-        return discountFormat.format(actualDiscount);
+        return BigDecimal.valueOf(actualDiscount).stripTrailingZeros().toPlainString();
     }
 }

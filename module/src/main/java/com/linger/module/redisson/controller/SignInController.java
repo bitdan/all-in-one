@@ -1,14 +1,22 @@
 package com.linger.module.redisson.controller;
 
+import com.linger.module.redisson.dto.MonthlySignInStatsResponse;
+import com.linger.module.redisson.dto.SignInConsecutiveResponse;
+import com.linger.module.redisson.dto.SignInRangeResponse;
+import com.linger.module.redisson.dto.SignInResponse;
+import com.linger.module.redisson.dto.SignInStatusResponse;
+import com.linger.module.redisson.dto.YearlySignInStatsResponse;
 import com.linger.module.redisson.service.SignInService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.util.HashMap;
-import java.util.Map;
 
 /**
  * 签到功能控制器
@@ -19,168 +27,163 @@ import java.util.Map;
 @Slf4j
 public class SignInController {
 
+    private static final DateTimeFormatter YEAR_MONTH_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM");
+
     private final SignInService signInService;
 
     /**
      * 用户签到
      */
     @PostMapping("/sign")
-    public Map<String, Object> signIn(@RequestParam Long userId,
-                                      @RequestParam(required = false) String date) {
-        Map<String, Object> result = new HashMap<>();
-
+    public SignInResponse signIn(@RequestParam Long userId,
+                                 @RequestParam(required = false) String date) {
         try {
-            // 如果没有指定日期，使用今天
-            String signDate = date != null ? date : LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+            String signDate = date != null ? date : LocalDate.now().toString();
 
             String signResult = signInService.signIn(userId, signDate);
             int consecutiveDays = signInService.getConsecutiveSignInDays(userId, signDate);
 
-            result.put("success", true);
-            result.put("message", signResult);
-            result.put("consecutiveDays", consecutiveDays);
-            result.put("signDate", signDate);
-
+            return SignInResponse.builder()
+                    .success(true)
+                    .message(signResult)
+                    .consecutiveDays(consecutiveDays)
+                    .signDate(signDate)
+                    .build();
         } catch (Exception e) {
             log.error("签到异常，userId: {}", userId, e);
-            result.put("success", false);
-            result.put("message", "签到失败：" + e.getMessage());
+            return SignInResponse.builder()
+                    .success(false)
+                    .message("签到失败")
+                    .build();
         }
-
-        return result;
     }
 
     /**
      * 查询签到状态
      */
     @GetMapping("/status")
-    public Map<String, Object> getSignInStatus(@RequestParam Long userId,
-                                               @RequestParam(required = false) String date) {
-        Map<String, Object> result = new HashMap<>();
-
+    public SignInStatusResponse getSignInStatus(@RequestParam Long userId,
+                                                @RequestParam(required = false) String date) {
         try {
-            String queryDate = date != null ? date : LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+            String queryDate = date != null ? date : LocalDate.now().toString();
 
             boolean isSigned = signInService.isSignedIn(userId, queryDate);
             int consecutiveDays = signInService.getConsecutiveSignInDays(userId, queryDate);
 
-            result.put("success", true);
-            result.put("isSigned", isSigned);
-            result.put("consecutiveDays", consecutiveDays);
-            result.put("queryDate", queryDate);
-
+            return SignInStatusResponse.builder()
+                    .success(true)
+                    .isSigned(isSigned)
+                    .consecutiveDays(consecutiveDays)
+                    .queryDate(queryDate)
+                    .build();
         } catch (Exception e) {
             log.error("查询签到状态异常，userId: {}", userId, e);
-            result.put("success", false);
-            result.put("message", "查询失败：" + e.getMessage());
+            return SignInStatusResponse.builder()
+                    .success(false)
+                    .message("查询失败")
+                    .build();
         }
-
-        return result;
     }
 
     /**
      * 获取月度签到统计
      */
     @GetMapping("/stats/monthly")
-    public Map<String, Object> getMonthlyStats(@RequestParam Long userId,
-                                               @RequestParam(required = false) String yearMonth) {
-        Map<String, Object> result = new HashMap<>();
-
+    public MonthlySignInStatsResponse getMonthlyStats(@RequestParam Long userId,
+                                                       @RequestParam(required = false) String yearMonth) {
         try {
             String queryMonth = yearMonth != null ? yearMonth :
-                    LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM"));
+                    LocalDate.now().format(YEAR_MONTH_FORMATTER);
 
             String stats = signInService.getMonthlySignInStats(userId, queryMonth);
 
-            result.put("success", true);
-            result.put("stats", stats);
-            result.put("yearMonth", queryMonth);
-
+            return MonthlySignInStatsResponse.builder()
+                    .success(true)
+                    .stats(stats)
+                    .yearMonth(queryMonth)
+                    .build();
         } catch (Exception e) {
             log.error("查询月度统计异常，userId: {}", userId, e);
-            result.put("success", false);
-            result.put("message", "查询失败：" + e.getMessage());
+            return MonthlySignInStatsResponse.builder()
+                    .success(false)
+                    .message("查询失败")
+                    .build();
         }
-
-        return result;
     }
 
     /**
      * 获取年度签到统计
      */
     @GetMapping("/stats/yearly")
-    public Map<String, Object> getYearlyStats(@RequestParam Long userId,
-                                              @RequestParam(required = false) Integer year) {
-        Map<String, Object> result = new HashMap<>();
-
+    public YearlySignInStatsResponse getYearlyStats(@RequestParam Long userId,
+                                                     @RequestParam(required = false) Integer year) {
         try {
             int queryYear = year != null ? year : LocalDate.now().getYear();
 
             String stats = signInService.getYearlySignInStats(userId, queryYear);
 
-            result.put("success", true);
-            result.put("stats", stats);
-            result.put("year", queryYear);
-
+            return YearlySignInStatsResponse.builder()
+                    .success(true)
+                    .stats(stats)
+                    .year(queryYear)
+                    .build();
         } catch (Exception e) {
             log.error("查询年度统计异常，userId: {}", userId, e);
-            result.put("success", false);
-            result.put("message", "查询失败：" + e.getMessage());
+            return YearlySignInStatsResponse.builder()
+                    .success(false)
+                    .message("查询失败")
+                    .build();
         }
-
-        return result;
     }
 
     /**
      * 获取指定日期范围的签到记录
      */
     @GetMapping("/range")
-    public Map<String, Object> getSignInRange(@RequestParam Long userId,
-                                              @RequestParam String startDate,
-                                              @RequestParam String endDate) {
-        Map<String, Object> result = new HashMap<>();
-
+    public SignInRangeResponse getSignInRange(@RequestParam Long userId,
+                                               @RequestParam String startDate,
+                                               @RequestParam String endDate) {
         try {
             String rangeStats = signInService.getSignInStatusRange(userId, startDate, endDate);
 
-            result.put("success", true);
-            result.put("rangeStats", rangeStats);
-            result.put("startDate", startDate);
-            result.put("endDate", endDate);
-
+            return SignInRangeResponse.builder()
+                    .success(true)
+                    .rangeStats(rangeStats)
+                    .startDate(startDate)
+                    .endDate(endDate)
+                    .build();
         } catch (Exception e) {
             log.error("查询签到范围异常，userId: {}, startDate: {}, endDate: {}",
                     userId, startDate, endDate, e);
-            result.put("success", false);
-            result.put("message", "查询失败：" + e.getMessage());
+            return SignInRangeResponse.builder()
+                    .success(false)
+                    .message("查询失败")
+                    .build();
         }
-
-        return result;
     }
 
     /**
      * 获取连续签到天数
      */
     @GetMapping("/consecutive")
-    public Map<String, Object> getConsecutiveDays(@RequestParam Long userId,
-                                                  @RequestParam(required = false) String date) {
-        Map<String, Object> result = new HashMap<>();
-
+    public SignInConsecutiveResponse getConsecutiveDays(@RequestParam Long userId,
+                                                         @RequestParam(required = false) String date) {
         try {
-            String queryDate = date != null ? date : LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+            String queryDate = date != null ? date : LocalDate.now().toString();
 
             int consecutiveDays = signInService.getConsecutiveSignInDays(userId, queryDate);
 
-            result.put("success", true);
-            result.put("consecutiveDays", consecutiveDays);
-            result.put("queryDate", queryDate);
-
+            return SignInConsecutiveResponse.builder()
+                    .success(true)
+                    .consecutiveDays(consecutiveDays)
+                    .queryDate(queryDate)
+                    .build();
         } catch (Exception e) {
             log.error("查询连续签到天数异常，userId: {}", userId, e);
-            result.put("success", false);
-            result.put("message", "查询失败：" + e.getMessage());
+            return SignInConsecutiveResponse.builder()
+                    .success(false)
+                    .message("查询失败")
+                    .build();
         }
-
-        return result;
     }
-} 
+}

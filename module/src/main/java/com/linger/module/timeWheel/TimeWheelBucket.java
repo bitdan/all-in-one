@@ -1,9 +1,10 @@
 package com.linger.module.timeWheel;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.Delayed;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Consumer;
 
 /**
  * 时间轮桶，用于存储和管理定时任务
@@ -41,16 +42,15 @@ public class TimeWheelBucket implements Delayed {
         return expiration.get();
     }
 
-    /**
-     * 刷新桶，将任务重新分配到时间轮中
-     */
-    public void flush(Consumer<TimerTask> taskConsumer) {
+    public synchronized List<TimerTask> drain() {
+        List<TimerTask> tasks = new ArrayList<>(taskList.size());
         TimerTask task = taskList.poll();
         while (task != null) {
-            taskConsumer.accept(task);
+            tasks.add(task);
             task = taskList.poll();
         }
         expiration.set(-1L);
+        return tasks;
     }
 
     @Override

@@ -1,10 +1,14 @@
 package com.linger.module.timeWheel;
 
+import lombok.extern.slf4j.Slf4j;
+
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 定时任务
  */
+@Slf4j
 public class TimerTask {
 
     private final long delayMs; // 延迟时间（毫秒）
@@ -15,9 +19,12 @@ public class TimerTask {
     private static final AtomicInteger TASK_ID_GENERATOR = new AtomicInteger(0);
 
     public TimerTask(long delayMs, Runnable task) {
-        this.delayMs = System.currentTimeMillis() + delayMs;
-        this.task = task;
+        if (delayMs < 0) {
+            throw new IllegalArgumentException("delayMs must not be negative");
+        }
         this.createTime = System.currentTimeMillis();
+        this.delayMs = Math.addExact(createTime, delayMs);
+        this.task = Objects.requireNonNull(task, "task must not be null");
         this.taskId = TASK_ID_GENERATOR.incrementAndGet();
     }
 
@@ -32,12 +39,10 @@ public class TimerTask {
      * 执行任务
      */
     public void run() {
-        if (task != null) {
-            try {
-                task.run();
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
+        try {
+            task.run();
+        } catch (RuntimeException e) {
+            log.error("Scheduled task failed, taskId={}", taskId, e);
         }
     }
 

@@ -2,6 +2,7 @@ package com.linger.module.annotation;
 
 
 import com.linger.module.util.LogFilterUtils;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
@@ -18,7 +19,6 @@ import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.expression.spel.support.StandardEvaluationContext;
 import org.springframework.stereotype.Component;
 
-import javax.annotation.Resource;
 import java.lang.reflect.Array;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -32,11 +32,11 @@ import java.util.stream.Collectors;
 @Aspect
 @Component
 @Slf4j
+@RequiredArgsConstructor
 @Order(Ordered.HIGHEST_PRECEDENCE + 10)
 public class RedisLockAspect {
 
-    @Resource
-    RedissonClient redissonClient;
+    private final RedissonClient redissonClient;
 
     private static final String DEFAULT_PROMPT = "请不要重复操作！";
     private static final String LOCK_PREFIX = "lock:";

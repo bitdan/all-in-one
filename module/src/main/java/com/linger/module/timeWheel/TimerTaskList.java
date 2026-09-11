@@ -1,42 +1,39 @@
 package com.linger.module.timeWheel;
 
-import java.util.concurrent.atomic.AtomicInteger;
-
 /**
  * 定时任务链表，用于管理桶中的任务
  */
 public class TimerTaskList {
 
-    private TimerTaskEntry root; // 根节点
-    private final AtomicInteger taskCounter; // 任务计数器
+    private final TimerTaskEntry root; // 根节点
+    private int taskCounter; // 任务计数器
 
     public TimerTaskList() {
-        this.root = new TimerTaskEntry(null, null);
+        this.root = new TimerTaskEntry(null);
         this.root.next = this.root;
         this.root.prev = this.root;
-        this.taskCounter = new AtomicInteger(0);
     }
 
     /**
      * 添加任务到链表
      */
-    public void addTask(TimerTask task) {
-        TimerTaskEntry entry = new TimerTaskEntry(task, this);
+    public synchronized void addTask(TimerTask task) {
+        TimerTaskEntry entry = new TimerTaskEntry(task);
         addEntry(entry);
-        taskCounter.incrementAndGet();
+        taskCounter++;
     }
 
     /**
      * 从链表头部取出任务
      */
-    public TimerTask poll() {
+    public synchronized TimerTask poll() {
         TimerTaskEntry entry = root.next;
         if (entry == root) {
             return null; // 链表为空
         }
 
         removeEntry(entry);
-        taskCounter.decrementAndGet();
+        taskCounter--;
         return entry.getTask();
     }
 
@@ -63,21 +60,21 @@ public class TimerTaskList {
     /**
      * 获取任务数量
      */
-    public int size() {
-        return taskCounter.get();
+    public synchronized int size() {
+        return taskCounter;
     }
 
     /**
      * 检查链表是否为空
      */
-    public boolean isEmpty() {
+    public synchronized boolean isEmpty() {
         return root.next == root;
     }
 
     /**
      * 清空链表
      */
-    public void clear() {
+    public synchronized void clear() {
         while (!isEmpty()) {
             poll();
         }
@@ -88,21 +85,15 @@ public class TimerTaskList {
      */
     private static class TimerTaskEntry {
         private final TimerTask task;
-        private final TimerTaskList list;
         private TimerTaskEntry next;
         private TimerTaskEntry prev;
 
-        public TimerTaskEntry(TimerTask task, TimerTaskList list) {
+        private TimerTaskEntry(TimerTask task) {
             this.task = task;
-            this.list = list;
         }
 
         public TimerTask getTask() {
             return task;
         }
-
-        public TimerTaskList getList() {
-            return list;
-        }
     }
-} 
+}

@@ -1,10 +1,10 @@
 package com.linger.module.util;
 
+import lombok.RequiredArgsConstructor;
 import org.redisson.api.RAtomicLong;
 import org.redisson.api.RedissonClient;
 import org.springframework.stereotype.Component;
 
-import javax.annotation.Resource;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.concurrent.TimeUnit;
@@ -15,10 +15,10 @@ import java.util.concurrent.TimeUnit;
  * @version 1.0
  */
 @Component
+@RequiredArgsConstructor
 public class RedisUtil {
 
-    @Resource
-    private RedissonClient redissonClient;
+    private final RedissonClient redissonClient;
 
     /**
      * 生成带有前缀 + 日期 + 自增序列 的订单号（每天自动从 1 开始）
