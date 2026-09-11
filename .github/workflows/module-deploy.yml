@@ -4,7 +4,10 @@ on:
   push:
     paths:
       - "module/**"
+      # 纯文档变更不影响构建产物，无需触发部署。
+      - "!module/**/*.md"
       - "pom.xml"
+      - "leetcode-editor/pom.xml"
       - ".github/workflows/module-deploy.yml"
   workflow_dispatch:
 

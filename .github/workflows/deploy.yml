@@ -5,7 +5,9 @@ on:
     paths:
       - "py/**"
       - "skills/**"
-      - ".github/workflows/deploy.yml.yml"
+      # 纯文档变更不影响镜像，无需触发部署。
+      - "!py/**/*.md"
+      - ".github/workflows/deploy.yml"
   workflow_dispatch:       # 支持手动触发
 
 jobs:
