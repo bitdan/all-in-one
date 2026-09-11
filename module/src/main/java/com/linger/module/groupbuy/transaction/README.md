@@ -2,7 +2,7 @@
 
 ## 1. 能力范围
 
-- PostgreSQL 保存活动、团、订单、成员、库存流水、Outbox 和延迟任务。
+- PostgreSQL 保存活动、团、订单、成员、库存账户、库存预占单、库存流水、Outbox 和延迟任务。
 - Redis Lua 原子校验活动、个人限购、库存、团名额和重复参团。
 - `(user_id, request_id)` 与 Redis 幂等 key 双重防重。
 - 支付回调使用订单状态 CAS 和支付流水唯一索引防止重复入账。
@@ -13,21 +13,22 @@
 退款网关当前使用 `LocalPaymentGateway` 模拟成功。接入真实支付渠道时，实现 `PaymentGateway`，并以
 `paymentNo` 作为退款幂等键。
 
-## 2. 初始化 PostgreSQL
+## 2. 初始化或升级 PostgreSQL
 
-SQL 文件位于同级业务包：
+拼团表结构使用独立的 Flyway 历史表管理，`local` Profile 启动时自动迁移。迁移文件位于：
 
 ```text
-module/src/main/java/com/linger/module/groupbuy/groupbuy_schema.sql
+module/src/main/resources/db/migration/groupbuy/
 ```
 
-PowerShell 示例：
+本地启动命令：
 
 ```powershell
-psql $env:POSTGRES_DSN -f module/src/main/java/com/linger/module/groupbuy/groupbuy_schema.sql
+mvn -pl module -am -Plocal spring-boot:run
 ```
 
-脚本只包含 `CREATE TABLE IF NOT EXISTS` 和索引，不包含测试数据，也不会由应用自动执行。
+`local` Profile 使用 `groupbuy_flyway_schema_history`，不会与同库其他业务的迁移记录混用；其他环境默认关闭 Flyway。
+迁移不包含测试数据；对旧版拼团表会根据已有库存流水回填库存账户和预占单。
 
 ## 3. 配置并启动
 
@@ -110,7 +111,7 @@ GET /api/v1/groupbuy/orders/{orderId}
 
 ## 5. 一致性边界
 
-Redis 是高并发准入层，PostgreSQL 是最终业务事实。系统不声明跨存储 Exactly Once，而是使用：
+Redis 是可重建的高并发准入层，PostgreSQL 的库存账户与预占单是最终业务事实。系统不声明跨存储 Exactly Once，而是使用：
 
 ```text
 Lua 原子预占 + 数据库唯一约束 + 状态 CAS + Outbox 至少一次投递 + 幂等消费 + 定时对账

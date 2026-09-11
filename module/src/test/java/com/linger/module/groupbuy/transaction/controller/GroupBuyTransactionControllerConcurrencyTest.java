@@ -10,14 +10,19 @@ import com.linger.module.groupbuy.transaction.dto.PaymentCallbackRequest;
 import com.linger.module.groupbuy.transaction.dto.PlaceGroupOrderRequest;
 import com.linger.module.groupbuy.transaction.entity.GroupBuyGroupEntity;
 import com.linger.module.groupbuy.transaction.entity.GroupBuyInventoryLedgerEntity;
+import com.linger.module.groupbuy.transaction.entity.GroupBuyInventoryReservationEntity;
+import com.linger.module.groupbuy.transaction.entity.GroupBuyInventoryStockEntity;
 import com.linger.module.groupbuy.transaction.entity.GroupBuyMemberEntity;
 import com.linger.module.groupbuy.transaction.entity.GroupBuyOrderEntity;
 import com.linger.module.groupbuy.transaction.mapper.GroupBuyGroupMapper;
 import com.linger.module.groupbuy.transaction.mapper.GroupBuyInventoryLedgerMapper;
+import com.linger.module.groupbuy.transaction.mapper.GroupBuyInventoryReservationMapper;
+import com.linger.module.groupbuy.transaction.mapper.GroupBuyInventoryStockMapper;
 import com.linger.module.groupbuy.transaction.mapper.GroupBuyMemberMapper;
 import com.linger.module.groupbuy.transaction.mapper.GroupBuyOrderMapper;
 import com.linger.module.groupbuy.transaction.model.GroupInstanceStatus;
 import com.linger.module.groupbuy.transaction.model.GroupOrderStatus;
+import com.linger.module.groupbuy.transaction.model.InventoryReservationStatus;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
@@ -59,7 +64,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 拼团交易接口真实并发集成测试。
  *
  * <p>测试启动随机端口 Undertow，通过真实 HTTP 请求访问 Controller，并使用 local profile 中配置的
- * PostgreSQL 和 Redis。执行前需要先运行 groupbuy_schema.sql。每次运行使用唯一活动和 SKU，测试数据
+ * PostgreSQL 和 Redis。local Profile 会在启动测试上下文时自动完成迁移。每次运行使用唯一活动和 SKU，测试数据
  * 会保留在数据库与 Redis 中，方便执行后人工对账。</p>
  */
 @Slf4j
@@ -86,6 +91,10 @@ class GroupBuyTransactionControllerConcurrencyTest {
     private GroupBuyMemberMapper memberMapper;
     @Autowired
     private GroupBuyInventoryLedgerMapper ledgerMapper;
+    @Autowired
+    private GroupBuyInventoryStockMapper inventoryStockMapper;
+    @Autowired
+    private GroupBuyInventoryReservationMapper inventoryReservationMapper;
     @Autowired
     private RedissonClient redissonClient;
 
@@ -288,6 +297,14 @@ class GroupBuyTransactionControllerConcurrencyTest {
         Long reserveLedgerCount = ledgerMapper.selectCount(new QueryWrapper<GroupBuyInventoryLedgerEntity>()
                 .eq("activity_id", context.getActivityId())
                 .eq("operation", "RESERVE"));
+        GroupBuyInventoryStockEntity databaseStock = inventoryStockMapper.selectOne(
+                new QueryWrapper<GroupBuyInventoryStockEntity>()
+                        .eq("activity_id", context.getActivityId())
+                        .eq("sku_id", skuId));
+        Long reservationCount = inventoryReservationMapper.selectCount(
+                new QueryWrapper<GroupBuyInventoryReservationEntity>()
+                        .eq("activity_id", context.getActivityId())
+                        .eq("status", InventoryReservationStatus.RESERVED));
         Map<String, String> redisStock = redisState(stockKey(context.getActivityId(), skuId));
         Map<String, String> redisGroup = redisState(groupKey(context.getActivityId(), skuId, context.getGroupId()));
         HttpCallResult queriedOrder = get("/api/v1/groupbuy/orders/" + acceptedOrderIds.get(0));
@@ -302,6 +319,10 @@ class GroupBuyTransactionControllerConcurrencyTest {
         assertEquals(requestCount - capacity, rejectedCount);
         assertEquals(Long.valueOf(capacity), memberCount);
         assertEquals(Long.valueOf(capacity), reserveLedgerCount);
+        assertEquals(0, databaseStock.getAvailableQuantity());
+        assertEquals(capacity, databaseStock.getReservedQuantity());
+        assertEquals(0, databaseStock.getConfirmedQuantity());
+        assertEquals(Long.valueOf(capacity), reservationCount);
         assertEquals("0", redisStock.get("available"));
         assertEquals(String.valueOf(capacity), redisStock.get("reserved"));
         assertEquals(String.valueOf(capacity), redisGroup.get("reservedCount"));
@@ -337,6 +358,14 @@ class GroupBuyTransactionControllerConcurrencyTest {
                 .count();
         Map<String, String> redisStock = redisState(stockKey(context.getActivityId(), skuId));
         Map<String, String> redisGroup = redisState(groupKey(context.getActivityId(), skuId, context.getGroupId()));
+        GroupBuyInventoryStockEntity databaseStock = inventoryStockMapper.selectOne(
+                new QueryWrapper<GroupBuyInventoryStockEntity>()
+                        .eq("activity_id", context.getActivityId())
+                        .eq("sku_id", skuId));
+        Long confirmedReservationCount = inventoryReservationMapper.selectCount(
+                new QueryWrapper<GroupBuyInventoryReservationEntity>()
+                        .eq("activity_id", context.getActivityId())
+                        .eq("status", InventoryReservationStatus.CONFIRMED));
 
         log.info("支付结算后PostgreSQL：group={}, successOrders={}, rejectedOrders={}",
                 group, successOrderCount, rejectedCount);
@@ -347,6 +376,10 @@ class GroupBuyTransactionControllerConcurrencyTest {
         assertEquals(capacity, group.getPaidCount());
         assertEquals(capacity, successOrderCount);
         assertEquals(requestCount - capacity, rejectedCount);
+        assertEquals(0, databaseStock.getAvailableQuantity());
+        assertEquals(0, databaseStock.getReservedQuantity());
+        assertEquals(capacity, databaseStock.getConfirmedQuantity());
+        assertEquals(Long.valueOf(capacity), confirmedReservationCount);
         assertEquals("0", redisStock.get("available"));
         assertEquals("0", redisStock.get("reserved"));
         assertEquals(String.valueOf(capacity), redisStock.get("confirmed"));

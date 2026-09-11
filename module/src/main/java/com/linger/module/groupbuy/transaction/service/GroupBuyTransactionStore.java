@@ -4,6 +4,8 @@ import com.linger.module.groupbuy.transaction.dto.CreateActivityRequest;
 import com.linger.module.groupbuy.transaction.entity.GroupBuyActivityEntity;
 import com.linger.module.groupbuy.transaction.entity.GroupBuyDelayTaskEntity;
 import com.linger.module.groupbuy.transaction.entity.GroupBuyGroupEntity;
+import com.linger.module.groupbuy.transaction.entity.GroupBuyInventoryReservationEntity;
+import com.linger.module.groupbuy.transaction.entity.GroupBuyInventoryStockEntity;
 import com.linger.module.groupbuy.transaction.entity.GroupBuyMemberEntity;
 import com.linger.module.groupbuy.transaction.entity.GroupBuyOrderEntity;
 import com.linger.module.groupbuy.transaction.entity.GroupBuyOutboxEventEntity;
@@ -11,6 +13,8 @@ import com.linger.module.groupbuy.transaction.mapper.GroupBuyActivityMapper;
 import com.linger.module.groupbuy.transaction.mapper.GroupBuyDelayTaskMapper;
 import com.linger.module.groupbuy.transaction.mapper.GroupBuyGroupMapper;
 import com.linger.module.groupbuy.transaction.mapper.GroupBuyInventoryLedgerMapper;
+import com.linger.module.groupbuy.transaction.mapper.GroupBuyInventoryReservationMapper;
+import com.linger.module.groupbuy.transaction.mapper.GroupBuyInventoryStockMapper;
 import com.linger.module.groupbuy.transaction.mapper.GroupBuyMemberMapper;
 import com.linger.module.groupbuy.transaction.mapper.GroupBuyOrderMapper;
 import com.linger.module.groupbuy.transaction.mapper.GroupBuyOutboxEventMapper;
@@ -20,6 +24,7 @@ import com.linger.module.groupbuy.transaction.model.GroupBuyEventType;
 import com.linger.module.groupbuy.transaction.model.GroupInstanceStatus;
 import com.linger.module.groupbuy.transaction.model.GroupMemberStatus;
 import com.linger.module.groupbuy.transaction.model.GroupOrderStatus;
+import com.linger.module.groupbuy.transaction.model.InventoryReservationStatus;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -46,10 +51,13 @@ public class GroupBuyTransactionStore {
     private final GroupBuyGroupMapper groupMapper;
     private final GroupBuyOrderMapper orderMapper;
     private final GroupBuyMemberMapper memberMapper;
+    private final GroupBuyInventoryStockMapper inventoryStockMapper;
+    private final GroupBuyInventoryReservationMapper inventoryReservationMapper;
     private final GroupBuyInventoryLedgerMapper ledgerMapper;
     private final GroupBuyOutboxEventMapper outboxMapper;
     private final GroupBuyDelayTaskMapper delayTaskMapper;
 
+    @Transactional
     public GroupBuyActivityEntity createActivity(CreateActivityRequest request) {
         OffsetDateTime now = now();
         GroupBuyActivityEntity entity = GroupBuyActivityEntity.builder()
@@ -71,6 +79,19 @@ public class GroupBuyTransactionStore {
                 .updatedAt(now)
                 .build();
         activityMapper.insert(entity);
+        inventoryStockMapper.insert(GroupBuyInventoryStockEntity.builder()
+                .activityId(entity.getId())
+                .skuId(entity.getSkuId())
+                .totalQuantity(entity.getTotalStock())
+                .availableQuantity(entity.getTotalStock())
+                .reservedQuantity(0)
+                .confirmedQuantity(0)
+                .version(0L)
+                .createdBy(0L)
+                .updatedBy(0L)
+                .createdAt(now)
+                .updatedAt(now)
+                .build());
         return entity;
     }
 
@@ -142,12 +163,29 @@ public class GroupBuyTransactionStore {
 
     @Transactional
     public void confirmReservation(GroupBuyOrderEntity order, OffsetDateTime payDeadline) {
-        // 四项写入必须同生共死：订单进入待支付、团人数镜像增加、成员占位、可靠超时任务落库。
+        // 订单、数据库库存账、预占单、成员、流水与超时任务必须在同一事务内提交。
         if (orderMapper.markWaitPay(order.getId(), order.getId(), payDeadline) != 1) {
             throw new IllegalStateException("订单不在 INIT 状态, orderId=" + order.getId());
         }
+        if (inventoryStockMapper.reserve(order.getActivityId(), order.getSkuId(), order.getQuantity()) != 1) {
+            throw new IllegalStateException("数据库可用库存不足, orderId=" + order.getId());
+        }
 
         OffsetDateTime now = now();
+        inventoryReservationMapper.insert(GroupBuyInventoryReservationEntity.builder()
+                .id(order.getId())
+                .orderId(order.getId())
+                .activityId(order.getActivityId())
+                .skuId(order.getSkuId())
+                .quantity(order.getQuantity())
+                .status(InventoryReservationStatus.RESERVED)
+                .expireAt(payDeadline)
+                .version(0L)
+                .createdBy(order.getUserId())
+                .updatedBy(order.getUserId())
+                .createdAt(now)
+                .updatedAt(now)
+                .build());
         memberMapper.insert(GroupBuyMemberEntity.builder()
                 .groupId(order.getGroupId())
                 .userId(order.getUserId())
@@ -226,6 +264,10 @@ public class GroupBuyTransactionStore {
         if (memberMapper.markPaid(orderId) == 0) {
             return new SettlementResult(false, false);
         }
+        if (inventoryReservationMapper.markConfirmed(orderId) != 1
+                || inventoryStockMapper.confirm(order.getActivityId(), order.getSkuId(), order.getQuantity()) != 1) {
+            throw new IllegalStateException("确认数据库库存失败, orderId=" + orderId);
+        }
         if (groupMapper.incrementPaid(group.getId()) != 1) {
             throw new IllegalStateException("增加已支付人数失败, groupId=" + group.getId());
         }
@@ -250,8 +292,7 @@ public class GroupBuyTransactionStore {
         }
         memberMapper.cancelReservation(orderId);
         groupMapper.decrementReserved(order.getGroupId());
-        ledgerMapper.insertIgnore(order.getActivityId(), order.getSkuId(), orderId,
-                "RELEASE", order.getQuantity());
+        releaseReservedInventory(order);
         insertOutbox(GroupBuyEventType.ORDER_RELEASE, "ORDER", orderId);
         return true;
     }
@@ -277,8 +318,7 @@ public class GroupBuyTransactionStore {
             if (order.getStatus() == GroupOrderStatus.WAIT_PAY && orderMapper.cancelUnpaid(order.getId()) == 1) {
                 memberMapper.cancelReservation(order.getId());
                 groupMapper.decrementReserved(order.getGroupId());
-                ledgerMapper.insertIgnore(order.getActivityId(), order.getSkuId(), order.getId(),
-                        "RELEASE", order.getQuantity());
+                releaseReservedInventory(order);
                 insertOutbox(GroupBuyEventType.ORDER_RELEASE, "ORDER", order.getId());
             } else if (order.getStatus() == GroupOrderStatus.PAID && orderMapper.markRefunding(order.getId()) == 1) {
                 memberMapper.markRefunding(order.getId());
@@ -295,7 +335,12 @@ public class GroupBuyTransactionStore {
             return current != null && current.getStatus() == GroupOrderStatus.REFUNDED;
         }
         memberMapper.markRefunded(order.getId());
-        groupMapper.decrementPaidAndReserved(order.getGroupId());
+        InventoryReservationStatus previousInventoryStatus = refundInventory(order);
+        if (previousInventoryStatus == InventoryReservationStatus.CONFIRMED) {
+            groupMapper.decrementPaidAndReserved(order.getGroupId());
+        } else {
+            groupMapper.decrementReserved(order.getGroupId());
+        }
         ledgerMapper.insertIgnore(order.getActivityId(), order.getSkuId(), order.getId(),
                 "REFUND", order.getQuantity());
         return true;
@@ -358,6 +403,42 @@ public class GroupBuyTransactionStore {
 
     private void insertOutbox(String eventType, String aggregateType, String aggregateId) {
         outboxMapper.insertEvent(UUID.randomUUID().toString(), eventType, aggregateType, aggregateId, "{}");
+    }
+
+    private void releaseReservedInventory(GroupBuyOrderEntity order) {
+        if (inventoryReservationMapper.markReleased(order.getId()) != 1
+                || inventoryStockMapper.release(order.getActivityId(), order.getSkuId(), order.getQuantity()) != 1) {
+            throw new IllegalStateException("释放数据库预占库存失败, orderId=" + order.getId());
+        }
+        ledgerMapper.insertIgnore(order.getActivityId(), order.getSkuId(), order.getId(),
+                "RELEASE", order.getQuantity());
+    }
+
+    private InventoryReservationStatus refundInventory(GroupBuyOrderEntity order) {
+        GroupBuyInventoryReservationEntity reservation =
+                inventoryReservationMapper.selectByOrderId(order.getId());
+        if (reservation == null) {
+            throw new IllegalStateException("库存预占单不存在, orderId=" + order.getId());
+        }
+        InventoryReservationStatus previousStatus = reservation.getStatus();
+        if (previousStatus == InventoryReservationStatus.REFUNDED) {
+            return previousStatus;
+        }
+        if (previousStatus != InventoryReservationStatus.RESERVED
+                && previousStatus != InventoryReservationStatus.CONFIRMED) {
+            throw new IllegalStateException("库存预占单状态不可退款, orderId=" + order.getId()
+                    + ", status=" + previousStatus);
+        }
+        if (inventoryReservationMapper.markRefunded(order.getId(), previousStatus.name()) != 1) {
+            throw new IllegalStateException("库存预占单退款状态更新失败, orderId=" + order.getId());
+        }
+        int affected = previousStatus == InventoryReservationStatus.CONFIRMED
+                ? inventoryStockMapper.refund(order.getActivityId(), order.getSkuId(), order.getQuantity())
+                : inventoryStockMapper.release(order.getActivityId(), order.getSkuId(), order.getQuantity());
+        if (affected != 1) {
+            throw new IllegalStateException("返还数据库库存失败, orderId=" + order.getId());
+        }
+        return previousStatus;
     }
 
     private long retryDelaySeconds(int retryCount) {

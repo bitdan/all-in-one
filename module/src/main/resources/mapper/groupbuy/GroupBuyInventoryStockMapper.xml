@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.linger.module.groupbuy.transaction.mapper.GroupBuyInventoryStockMapper">
+
+    <update id="reserve">
+        UPDATE groupbuy_inventory_stock
+        SET available_quantity = available_quantity - #{quantity},
+            reserved_quantity = reserved_quantity + #{quantity},
+            version = version + 1,
+            updated_by = 0,
+            updated_at = NOW()
+        WHERE activity_id = #{activityId}
+          AND sku_id = #{skuId}
+          AND available_quantity >= #{quantity}
+    </update>
+
+    <update id="confirm">
+        UPDATE groupbuy_inventory_stock
+        SET reserved_quantity = reserved_quantity - #{quantity},
+            confirmed_quantity = confirmed_quantity + #{quantity},
+            version = version + 1,
+            updated_by = 0,
+            updated_at = NOW()
+        WHERE activity_id = #{activityId}
+          AND sku_id = #{skuId}
+          AND reserved_quantity >= #{quantity}
+    </update>
+
+    <update id="release">
+        UPDATE groupbuy_inventory_stock
+        SET reserved_quantity = reserved_quantity - #{quantity},
+            available_quantity = available_quantity + #{quantity},
+            version = version + 1,
+            updated_by = 0,
+            updated_at = NOW()
+        WHERE activity_id = #{activityId}
+          AND sku_id = #{skuId}
+          AND reserved_quantity >= #{quantity}
+    </update>
+
+    <update id="refund">
+        UPDATE groupbuy_inventory_stock
+        SET confirmed_quantity = confirmed_quantity - #{quantity},
+            available_quantity = available_quantity + #{quantity},
+            version = version + 1,
+            updated_by = 0,
+            updated_at = NOW()
+        WHERE activity_id = #{activityId}
+          AND sku_id = #{skuId}
+          AND confirmed_quantity >= #{quantity}
+    </update>
+</mapper>

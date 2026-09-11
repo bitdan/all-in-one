@@ -31,7 +31,7 @@
     <update id="markRefunding">
         UPDATE groupbuy_members
         SET status = 'REFUNDING', updated_by = 0, updated_at = NOW()
-        WHERE order_id = #{orderId} AND status = 'PAID'
+        WHERE order_id = #{orderId} AND status IN ('RESERVED', 'PAID')
     </update>
 
     <update id="markRefunded">

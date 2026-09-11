@@ -11,6 +11,13 @@ spring:
     database: ${REDIS_DATABASE:15} # 数据库索引
     redisson:
       file: classpath:redisson-local.yml
+  # 本地开发启动时自动执行拼团数据库迁移；其他 Profile 仍由 application.yml 保持关闭。
+  flyway:
+    enabled: true
+    locations: classpath:db/migration/groupbuy
+    table: groupbuy_flyway_schema_history
+    baseline-on-migrate: true
+    baseline-version: 0
 
 mybatis-plus:
   configuration:

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.linger.module.groupbuy.transaction.mapper.GroupBuyInventoryReservationMapper">
+
+    <select id="selectByOrderId"
+            resultType="com.linger.module.groupbuy.transaction.entity.GroupBuyInventoryReservationEntity">
+        SELECT *
+        FROM groupbuy_inventory_reservations
+        WHERE order_id = #{orderId}
+    </select>
+
+    <update id="markConfirmed">
+        UPDATE groupbuy_inventory_reservations
+        SET status = 'CONFIRMED', version = version + 1, updated_by = 0, updated_at = NOW()
+        WHERE order_id = #{orderId} AND status = 'RESERVED'
+    </update>
+
+    <update id="markReleased">
+        UPDATE groupbuy_inventory_reservations
+        SET status = 'RELEASED', version = version + 1, updated_by = 0, updated_at = NOW()
+        WHERE order_id = #{orderId} AND status = 'RESERVED'
+    </update>
+
+    <update id="markRefunded">
+        UPDATE groupbuy_inventory_reservations
+        SET status = 'REFUNDED', version = version + 1, updated_by = 0, updated_at = NOW()
+        WHERE order_id = #{orderId} AND status = #{expectedStatus}
+    </update>
+</mapper>

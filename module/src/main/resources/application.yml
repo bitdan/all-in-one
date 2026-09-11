@@ -10,6 +10,8 @@ spring:
       pool-name: linger-postgres-pool
       maximum-pool-size: ${POSTGRES_POOL_SIZE:20}
       minimum-idle: ${POSTGRES_MIN_IDLE:2}
+  flyway:
+    enabled: false
 
 toolhub:
   cors-origins: ${TOOL_HUB_CORS_ORIGINS:http://localhost:5173,http://localhost:3000,http://tool.linger.host,https://tool.linger.host}
