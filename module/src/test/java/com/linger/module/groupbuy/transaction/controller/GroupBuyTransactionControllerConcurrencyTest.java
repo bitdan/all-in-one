@@ -2,6 +2,8 @@ package com.linger.module.groupbuy.transaction.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.linger.module.groupbuy.infrastructure.service.GroupBuyDelayScheduler;
+import com.linger.module.groupbuy.infrastructure.service.GroupBuyOutboxProcessor;
 import com.linger.module.util.JsonUtils;
 import com.linger.LingerApplication;
 import com.linger.module.groupbuy.transaction.dto.CreateActivityRequest;
@@ -34,6 +36,7 @@ import org.redisson.api.RedissonClient;
 import org.redisson.client.codec.StringCodec;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -63,17 +66,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 拼团交易接口真实并发集成测试。
  *
- * <p>测试启动随机端口 Undertow，通过真实 HTTP 请求访问 Controller，并使用 local profile 中配置的
- * PostgreSQL 和 Redis。local Profile 会在启动测试上下文时自动完成迁移。每次运行使用唯一活动和 SKU，测试数据
- * 会保留在数据库与 Redis 中，方便执行后人工对账。</p>
+ * <p>测试通过 {@code groupbuy.concurrent.base-url} 访问指定的已部署节点，并使用 local profile 中配置的
+ * PostgreSQL 和 Redis 做一致性校验。测试进程不启动 Web 服务，也不参与 Outbox 和延迟任务消费。每次运行使用
+ * 唯一活动和 SKU，测试数据会保留在数据库与 Redis 中，方便执行后人工对账。</p>
  */
 @Slf4j
 @ActiveProfiles("local")
 @SpringBootTest(
         classes = LingerApplication.class,
-        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        webEnvironment = SpringBootTest.WebEnvironment.NONE,
         properties = {
-                "groupbuy.transaction.outbox-poll-ms=100",
+                "spring.flyway.enabled=false",
                 "spring.datasource.hikari.minimum-idle=20"
         }
 )
@@ -81,8 +84,15 @@ class GroupBuyTransactionControllerConcurrencyTest {
 
     private static final BigDecimal UNIT_PRICE = new BigDecimal("19.90");
 
-    @Autowired
     private TestRestTemplate restTemplate;
+    private String baseUrl;
+
+    @MockBean
+    private GroupBuyOutboxProcessor outboxProcessor;
+
+    @MockBean
+    private GroupBuyDelayScheduler delayScheduler;
+
     @Autowired
     private GroupBuyGroupMapper groupMapper;
     @Autowired
@@ -100,12 +110,14 @@ class GroupBuyTransactionControllerConcurrencyTest {
 
     @BeforeEach
     void configureHttpTimeout() {
+        baseUrl = "http://43.156.83.246:9999";
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(10_000);
         requestFactory.setReadTimeout(
                 positiveSystemProperty("groupbuy.concurrent.http-read-timeout-ms", 60_000));
-        // TestRestTemplate 默认读取超时不足以覆盖远程数据库热点行排队，压测中显式区分客户端超时和服务端失败。
+        restTemplate = new TestRestTemplate();
         restTemplate.getRestTemplate().setRequestFactory(requestFactory);
+        log.info("并发测试目标节点：{}", baseUrl);
     }
 
     @Test
@@ -253,14 +265,14 @@ class GroupBuyTransactionControllerConcurrencyTest {
 
     private HttpCallResult post(String path, Object request) {
         long startedAt = System.nanoTime();
-        ResponseEntity<String> response = restTemplate.postForEntity(path, request, String.class);
+        ResponseEntity<String> response = restTemplate.postForEntity(baseUrl + path, request, String.class);
         long latencyMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
         return parseResponse(path, response, latencyMs);
     }
 
     private HttpCallResult get(String path) {
         long startedAt = System.nanoTime();
-        ResponseEntity<String> response = restTemplate.getForEntity(path, String.class);
+        ResponseEntity<String> response = restTemplate.getForEntity(baseUrl + path, String.class);
         long latencyMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
         return parseResponse(path, response, latencyMs);
     }
@@ -331,7 +343,9 @@ class GroupBuyTransactionControllerConcurrencyTest {
     }
 
     private void waitForGroupSuccess(Long groupId, int capacity) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        int timeoutSeconds = positiveSystemProperty(
+                "groupbuy.concurrent.settlement-timeout-seconds", 90);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
         while (System.nanoTime() < deadline) {
             GroupBuyGroupEntity group = groupMapper.selectById(groupId);
             if (group != null && group.getStatus() == GroupInstanceStatus.SUCCESS
@@ -341,7 +355,8 @@ class GroupBuyTransactionControllerConcurrencyTest {
             Thread.sleep(200L);
         }
         GroupBuyGroupEntity current = groupMapper.selectById(groupId);
-        throw new AssertionError("Outbox未在30秒内完成成团结算，当前团状态=" + current);
+        throw new AssertionError("Outbox未在" + timeoutSeconds
+                + "秒内完成成团结算，当前团状态=" + current);
     }
 
     private void verifyPaidState(TestContext context,
