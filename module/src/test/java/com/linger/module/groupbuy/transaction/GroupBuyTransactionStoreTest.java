@@ -1,21 +1,21 @@
 package com.linger.module.groupbuy.transaction;
 
-import com.linger.module.groupbuy.transaction.entity.GroupBuyGroupEntity;
-import com.linger.module.groupbuy.transaction.entity.GroupBuyInventoryReservationEntity;
-import com.linger.module.groupbuy.transaction.entity.GroupBuyMemberEntity;
-import com.linger.module.groupbuy.transaction.entity.GroupBuyOrderEntity;
-import com.linger.module.groupbuy.transaction.mapper.GroupBuyActivityMapper;
-import com.linger.module.groupbuy.transaction.mapper.GroupBuyDelayTaskMapper;
-import com.linger.module.groupbuy.transaction.mapper.GroupBuyGroupMapper;
-import com.linger.module.groupbuy.transaction.mapper.GroupBuyInventoryLedgerMapper;
-import com.linger.module.groupbuy.transaction.mapper.GroupBuyInventoryReservationMapper;
-import com.linger.module.groupbuy.transaction.mapper.GroupBuyInventoryStockMapper;
-import com.linger.module.groupbuy.transaction.mapper.GroupBuyMemberMapper;
-import com.linger.module.groupbuy.transaction.mapper.GroupBuyOrderMapper;
-import com.linger.module.groupbuy.transaction.mapper.GroupBuyOutboxEventMapper;
-import com.linger.module.groupbuy.transaction.model.GroupInstanceStatus;
-import com.linger.module.groupbuy.transaction.model.GroupOrderStatus;
-import com.linger.module.groupbuy.transaction.model.InventoryReservationStatus;
+import com.linger.module.groupbuy.group.entity.GroupBuyGroupEntity;
+import com.linger.module.groupbuy.inventory.entity.GroupBuyInventoryReservationEntity;
+import com.linger.module.groupbuy.group.entity.GroupBuyMemberEntity;
+import com.linger.module.groupbuy.order.entity.GroupBuyOrderEntity;
+import com.linger.module.groupbuy.activity.mapper.GroupBuyActivityMapper;
+import com.linger.module.groupbuy.infrastructure.mapper.GroupBuyDelayTaskMapper;
+import com.linger.module.groupbuy.group.mapper.GroupBuyGroupMapper;
+import com.linger.module.groupbuy.inventory.mapper.GroupBuyInventoryLedgerMapper;
+import com.linger.module.groupbuy.inventory.mapper.GroupBuyInventoryReservationMapper;
+import com.linger.module.groupbuy.inventory.mapper.GroupBuyInventoryStockMapper;
+import com.linger.module.groupbuy.group.mapper.GroupBuyMemberMapper;
+import com.linger.module.groupbuy.order.mapper.GroupBuyOrderMapper;
+import com.linger.module.groupbuy.infrastructure.mapper.GroupBuyOutboxEventMapper;
+import com.linger.module.groupbuy.group.model.GroupInstanceStatus;
+import com.linger.module.groupbuy.order.model.GroupOrderStatus;
+import com.linger.module.groupbuy.inventory.model.InventoryReservationStatus;
 import com.linger.module.groupbuy.transaction.service.GroupBuyTransactionStore;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +26,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -125,6 +126,8 @@ class GroupBuyTransactionStoreTest {
         GroupBuyOrderEntity order = order("order-3", GroupOrderStatus.WAIT_PAY);
         when(orderMapper.selectById("order-3")).thenReturn(order);
         when(orderMapper.cancelUnpaid("order-3")).thenReturn(1);
+        when(memberMapper.cancelReservation("order-3")).thenReturn(1);
+        when(groupMapper.decrementReserved(2L)).thenReturn(1);
         when(inventoryReservationMapper.markReleased("order-3")).thenReturn(1);
         when(inventoryStockMapper.release(1L, "SKU-1", 1)).thenReturn(1);
 
@@ -142,6 +145,20 @@ class GroupBuyTransactionStoreTest {
     }
 
     @Test
+    void shouldStopCancellationWhenGroupCounterHasDrifted() {
+        GroupBuyOrderEntity order = order("order-drift", GroupOrderStatus.WAIT_PAY);
+        when(orderMapper.selectById("order-drift")).thenReturn(order);
+        when(orderMapper.cancelUnpaid("order-drift")).thenReturn(1);
+        when(memberMapper.cancelReservation("order-drift")).thenReturn(1);
+        when(groupMapper.decrementReserved(2L)).thenReturn(0);
+
+        assertThrows(IllegalStateException.class, () -> store.cancelUnpaidOrder("order-drift"));
+
+        verify(inventoryReservationMapper, never()).markReleased("order-drift");
+        verify(outboxMapper, never()).insertEvent(anyString(), anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test
     void shouldNotDecrementPaidCountWhenRefundingBeforePaymentSettlement() {
         GroupBuyOrderEntity order = order("order-4", GroupOrderStatus.REFUNDING);
         GroupBuyInventoryReservationEntity reservation = GroupBuyInventoryReservationEntity.builder()
@@ -151,6 +168,8 @@ class GroupBuyTransactionStoreTest {
                 .quantity(1)
                 .build();
         when(orderMapper.markRefunded("order-4")).thenReturn(1);
+        when(memberMapper.markRefunded("order-4")).thenReturn(1);
+        when(groupMapper.decrementReserved(2L)).thenReturn(1);
         when(inventoryReservationMapper.selectByOrderId("order-4")).thenReturn(reservation);
         when(inventoryReservationMapper.markRefunded("order-4", "RESERVED")).thenReturn(1);
         when(inventoryStockMapper.release(1L, "SKU-1", 1)).thenReturn(1);

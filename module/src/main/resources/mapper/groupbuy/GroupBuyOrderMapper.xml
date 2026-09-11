@@ -2,9 +2,9 @@
 <!DOCTYPE mapper
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.linger.module.groupbuy.transaction.mapper.GroupBuyOrderMapper">
+<mapper namespace="com.linger.module.groupbuy.order.mapper.GroupBuyOrderMapper">
 
-    <select id="selectByUserRequest" resultType="com.linger.module.groupbuy.transaction.entity.GroupBuyOrderEntity">
+    <select id="selectByUserRequest" resultType="com.linger.module.groupbuy.order.entity.GroupBuyOrderEntity">
         SELECT *
         FROM groupbuy_orders
         WHERE user_id = #{userId}
@@ -62,7 +62,7 @@
         WHERE id = #{orderId} AND status = 'REFUNDING'
     </update>
 
-    <select id="selectStaleInit" resultType="com.linger.module.groupbuy.transaction.entity.GroupBuyOrderEntity">
+    <select id="selectStaleInit" resultType="com.linger.module.groupbuy.order.entity.GroupBuyOrderEntity">
         SELECT *
         FROM groupbuy_orders
         WHERE status = 'INIT'
@@ -71,7 +71,7 @@
         LIMIT #{limit}
     </select>
 
-    <select id="selectExpiredUnpaid" resultType="com.linger.module.groupbuy.transaction.entity.GroupBuyOrderEntity">
+    <select id="selectExpiredUnpaid" resultType="com.linger.module.groupbuy.order.entity.GroupBuyOrderEntity">
         SELECT *
         FROM groupbuy_orders
         WHERE status = 'WAIT_PAY'
@@ -80,7 +80,7 @@
         LIMIT #{limit}
     </select>
 
-    <select id="selectByGroupId" resultType="com.linger.module.groupbuy.transaction.entity.GroupBuyOrderEntity">
+    <select id="selectByGroupId" resultType="com.linger.module.groupbuy.order.entity.GroupBuyOrderEntity">
         SELECT *
         FROM groupbuy_orders
         WHERE group_id = #{groupId}

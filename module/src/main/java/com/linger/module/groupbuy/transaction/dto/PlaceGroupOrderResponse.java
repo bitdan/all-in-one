@@ -1,6 +1,6 @@
 package com.linger.module.groupbuy.transaction.dto;
 
-import com.linger.module.groupbuy.transaction.model.GroupOrderStatus;
+import com.linger.module.groupbuy.order.model.GroupOrderStatus;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 

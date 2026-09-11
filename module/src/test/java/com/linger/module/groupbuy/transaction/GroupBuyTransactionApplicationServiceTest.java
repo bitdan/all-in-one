@@ -3,22 +3,23 @@ package com.linger.module.groupbuy.transaction;
 import com.linger.module.groupbuy.transaction.dto.PaymentCallbackRequest;
 import com.linger.module.groupbuy.transaction.dto.PlaceGroupOrderRequest;
 import com.linger.module.groupbuy.transaction.dto.PlaceGroupOrderResponse;
-import com.linger.module.groupbuy.transaction.entity.GroupBuyActivityEntity;
-import com.linger.module.groupbuy.transaction.entity.GroupBuyGroupEntity;
-import com.linger.module.groupbuy.transaction.entity.GroupBuyOrderEntity;
+import com.linger.module.groupbuy.activity.entity.GroupBuyActivityEntity;
+import com.linger.module.groupbuy.group.entity.GroupBuyGroupEntity;
+import com.linger.module.groupbuy.order.entity.GroupBuyOrderEntity;
 import com.linger.module.groupbuy.transaction.exception.GroupBuyBusinessException;
-import com.linger.module.groupbuy.transaction.model.ActivityStatus;
-import com.linger.module.groupbuy.transaction.model.GroupInstanceStatus;
-import com.linger.module.groupbuy.transaction.model.GroupOrderStatus;
+import com.linger.module.groupbuy.activity.model.ActivityStatus;
+import com.linger.module.groupbuy.group.model.GroupInstanceStatus;
+import com.linger.module.groupbuy.order.model.GroupOrderStatus;
 import com.linger.module.groupbuy.transaction.model.ReservationResult;
 import com.linger.module.groupbuy.transaction.service.GroupBuyTransactionApplicationService;
 import com.linger.module.groupbuy.transaction.service.GroupBuyTransactionStore;
-import com.linger.module.groupbuy.transaction.service.RedisGroupBuyAdmissionService;
+import com.linger.module.groupbuy.infrastructure.service.RedisGroupBuyAdmissionService;
 import com.linger.module.redisson.service.RateLimiterService;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.dao.DuplicateKeyException;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -188,6 +189,28 @@ class GroupBuyTransactionApplicationServiceTest {
         assertEquals("PAYMENT_AMOUNT_MISMATCH", exception.getCode());
         assertTrue(exception.getMessage().contains("支付金额"));
         verify(store, never()).recordPayment(anyString(), anyString(), any());
+    }
+
+    @Test
+    void shouldReturnBusinessConflictWhenPaymentNumberBelongsToAnotherOrder() {
+        GroupBuyOrderEntity order = GroupBuyOrderEntity.builder()
+                .id("order-2")
+                .payableAmount(new BigDecimal("99.90"))
+                .status(GroupOrderStatus.WAIT_PAY)
+                .build();
+        when(store.findOrder("order-2")).thenReturn(order);
+        when(store.recordPayment(eq("order-2"), eq("payment-used"), any()))
+                .thenThrow(new DuplicateKeyException("duplicate payment_no"));
+        PaymentCallbackRequest request = new PaymentCallbackRequest();
+        request.setOrderId("order-2");
+        request.setPaymentNo("payment-used");
+        request.setPaidAmount(new BigDecimal("99.90"));
+
+        GroupBuyBusinessException exception = assertThrows(
+                GroupBuyBusinessException.class, () -> service.recordPayment(request));
+
+        assertEquals("PAYMENT_NO_CONFLICT", exception.getCode());
+        assertTrue(exception.getMessage().contains("其他订单"));
     }
 
     private PlaceGroupOrderRequest orderRequest(String requestId) {

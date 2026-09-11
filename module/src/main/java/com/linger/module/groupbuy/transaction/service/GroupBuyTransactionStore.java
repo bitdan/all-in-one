@@ -1,30 +1,30 @@
 package com.linger.module.groupbuy.transaction.service;
 
 import com.linger.module.groupbuy.transaction.dto.CreateActivityRequest;
-import com.linger.module.groupbuy.transaction.entity.GroupBuyActivityEntity;
-import com.linger.module.groupbuy.transaction.entity.GroupBuyDelayTaskEntity;
-import com.linger.module.groupbuy.transaction.entity.GroupBuyGroupEntity;
-import com.linger.module.groupbuy.transaction.entity.GroupBuyInventoryReservationEntity;
-import com.linger.module.groupbuy.transaction.entity.GroupBuyInventoryStockEntity;
-import com.linger.module.groupbuy.transaction.entity.GroupBuyMemberEntity;
-import com.linger.module.groupbuy.transaction.entity.GroupBuyOrderEntity;
-import com.linger.module.groupbuy.transaction.entity.GroupBuyOutboxEventEntity;
-import com.linger.module.groupbuy.transaction.mapper.GroupBuyActivityMapper;
-import com.linger.module.groupbuy.transaction.mapper.GroupBuyDelayTaskMapper;
-import com.linger.module.groupbuy.transaction.mapper.GroupBuyGroupMapper;
-import com.linger.module.groupbuy.transaction.mapper.GroupBuyInventoryLedgerMapper;
-import com.linger.module.groupbuy.transaction.mapper.GroupBuyInventoryReservationMapper;
-import com.linger.module.groupbuy.transaction.mapper.GroupBuyInventoryStockMapper;
-import com.linger.module.groupbuy.transaction.mapper.GroupBuyMemberMapper;
-import com.linger.module.groupbuy.transaction.mapper.GroupBuyOrderMapper;
-import com.linger.module.groupbuy.transaction.mapper.GroupBuyOutboxEventMapper;
-import com.linger.module.groupbuy.transaction.model.ActivityStatus;
-import com.linger.module.groupbuy.transaction.model.GroupBuyDelayTaskType;
-import com.linger.module.groupbuy.transaction.model.GroupBuyEventType;
-import com.linger.module.groupbuy.transaction.model.GroupInstanceStatus;
-import com.linger.module.groupbuy.transaction.model.GroupMemberStatus;
-import com.linger.module.groupbuy.transaction.model.GroupOrderStatus;
-import com.linger.module.groupbuy.transaction.model.InventoryReservationStatus;
+import com.linger.module.groupbuy.activity.entity.GroupBuyActivityEntity;
+import com.linger.module.groupbuy.infrastructure.entity.GroupBuyDelayTaskEntity;
+import com.linger.module.groupbuy.group.entity.GroupBuyGroupEntity;
+import com.linger.module.groupbuy.inventory.entity.GroupBuyInventoryReservationEntity;
+import com.linger.module.groupbuy.inventory.entity.GroupBuyInventoryStockEntity;
+import com.linger.module.groupbuy.group.entity.GroupBuyMemberEntity;
+import com.linger.module.groupbuy.order.entity.GroupBuyOrderEntity;
+import com.linger.module.groupbuy.infrastructure.entity.GroupBuyOutboxEventEntity;
+import com.linger.module.groupbuy.activity.mapper.GroupBuyActivityMapper;
+import com.linger.module.groupbuy.infrastructure.mapper.GroupBuyDelayTaskMapper;
+import com.linger.module.groupbuy.group.mapper.GroupBuyGroupMapper;
+import com.linger.module.groupbuy.inventory.mapper.GroupBuyInventoryLedgerMapper;
+import com.linger.module.groupbuy.inventory.mapper.GroupBuyInventoryReservationMapper;
+import com.linger.module.groupbuy.inventory.mapper.GroupBuyInventoryStockMapper;
+import com.linger.module.groupbuy.group.mapper.GroupBuyMemberMapper;
+import com.linger.module.groupbuy.order.mapper.GroupBuyOrderMapper;
+import com.linger.module.groupbuy.infrastructure.mapper.GroupBuyOutboxEventMapper;
+import com.linger.module.groupbuy.activity.model.ActivityStatus;
+import com.linger.module.groupbuy.infrastructure.model.GroupBuyDelayTaskType;
+import com.linger.module.groupbuy.infrastructure.model.GroupBuyEventType;
+import com.linger.module.groupbuy.group.model.GroupInstanceStatus;
+import com.linger.module.groupbuy.group.model.GroupMemberStatus;
+import com.linger.module.groupbuy.order.model.GroupOrderStatus;
+import com.linger.module.groupbuy.inventory.model.InventoryReservationStatus;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -290,8 +290,10 @@ public class GroupBuyTransactionStore {
         if (order == null || orderMapper.cancelUnpaid(orderId) != 1) {
             return false;
         }
-        memberMapper.cancelReservation(orderId);
-        groupMapper.decrementReserved(order.getGroupId());
+        if (memberMapper.cancelReservation(orderId) != 1
+                || groupMapper.decrementReserved(order.getGroupId()) != 1) {
+            throw new IllegalStateException("释放数据库团名额失败, orderId=" + orderId);
+        }
         releaseReservedInventory(order);
         insertOutbox(GroupBuyEventType.ORDER_RELEASE, "ORDER", orderId);
         return true;
@@ -316,8 +318,10 @@ public class GroupBuyTransactionStore {
         List<GroupBuyOrderEntity> orders = orderMapper.selectByGroupId(groupId);
         for (GroupBuyOrderEntity order : orders) {
             if (order.getStatus() == GroupOrderStatus.WAIT_PAY && orderMapper.cancelUnpaid(order.getId()) == 1) {
-                memberMapper.cancelReservation(order.getId());
-                groupMapper.decrementReserved(order.getGroupId());
+                if (memberMapper.cancelReservation(order.getId()) != 1
+                        || groupMapper.decrementReserved(order.getGroupId()) != 1) {
+                    throw new IllegalStateException("释放数据库团名额失败, orderId=" + order.getId());
+                }
                 releaseReservedInventory(order);
                 insertOutbox(GroupBuyEventType.ORDER_RELEASE, "ORDER", order.getId());
             } else if (order.getStatus() == GroupOrderStatus.PAID && orderMapper.markRefunding(order.getId()) == 1) {
@@ -334,12 +338,15 @@ public class GroupBuyTransactionStore {
             GroupBuyOrderEntity current = orderMapper.selectById(order.getId());
             return current != null && current.getStatus() == GroupOrderStatus.REFUNDED;
         }
-        memberMapper.markRefunded(order.getId());
+        if (memberMapper.markRefunded(order.getId()) != 1) {
+            throw new IllegalStateException("更新团成员退款状态失败, orderId=" + order.getId());
+        }
         InventoryReservationStatus previousInventoryStatus = refundInventory(order);
-        if (previousInventoryStatus == InventoryReservationStatus.CONFIRMED) {
-            groupMapper.decrementPaidAndReserved(order.getGroupId());
-        } else {
-            groupMapper.decrementReserved(order.getGroupId());
+        int affectedGroupRows = previousInventoryStatus == InventoryReservationStatus.CONFIRMED
+                ? groupMapper.decrementPaidAndReserved(order.getGroupId())
+                : groupMapper.decrementReserved(order.getGroupId());
+        if (affectedGroupRows != 1) {
+            throw new IllegalStateException("回退数据库团计数失败, orderId=" + order.getId());
         }
         ledgerMapper.insertIgnore(order.getActivityId(), order.getSkuId(), order.getId(),
                 "REFUND", order.getQuantity());

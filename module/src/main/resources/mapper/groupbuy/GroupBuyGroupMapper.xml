@@ -2,9 +2,9 @@
 <!DOCTYPE mapper
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.linger.module.groupbuy.transaction.mapper.GroupBuyGroupMapper">
+<mapper namespace="com.linger.module.groupbuy.group.mapper.GroupBuyGroupMapper">
 
-    <select id="selectForUpdate" resultType="com.linger.module.groupbuy.transaction.entity.GroupBuyGroupEntity">
+    <select id="selectForUpdate" resultType="com.linger.module.groupbuy.group.entity.GroupBuyGroupEntity">
         SELECT *
         FROM groupbuy_groups
         WHERE id = #{id}
@@ -30,11 +30,12 @@
 
     <update id="decrementReserved">
         UPDATE groupbuy_groups
-        SET reserved_count = GREATEST(reserved_count - 1, 0),
+        SET reserved_count = reserved_count - 1,
             version = version + 1,
             updated_by = 0,
             updated_at = NOW()
         WHERE id = #{id}
+          AND reserved_count > paid_count
     </update>
 
     <update id="incrementPaid">
@@ -50,12 +51,13 @@
 
     <update id="decrementPaidAndReserved">
         UPDATE groupbuy_groups
-        SET paid_count = GREATEST(paid_count - 1, 0),
-            reserved_count = GREATEST(reserved_count - 1, 0),
+        SET paid_count = paid_count - 1,
+            reserved_count = reserved_count - 1,
             version = version + 1,
             updated_by = 0,
             updated_at = NOW()
         WHERE id = #{id}
+          AND paid_count > 0
     </update>
 
     <update id="markSuccess">

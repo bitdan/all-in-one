@@ -10,7 +10,11 @@ import org.springframework.context.annotation.Configuration;
 
 @Configuration
 @MapperScan({
-        "com.linger.module.groupbuy.transaction.mapper",
+        "com.linger.module.groupbuy.activity.mapper",
+        "com.linger.module.groupbuy.group.mapper",
+        "com.linger.module.groupbuy.inventory.mapper",
+        "com.linger.module.groupbuy.order.mapper",
+        "com.linger.module.groupbuy.infrastructure.mapper",
         "com.linger.module.toolhub.auth.mapper",
         "com.linger.module.toolhub.post.mapper"
 })

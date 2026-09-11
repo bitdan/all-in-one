@@ -2,10 +2,10 @@
 <!DOCTYPE mapper
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.linger.module.groupbuy.transaction.mapper.GroupBuyInventoryReservationMapper">
+<mapper namespace="com.linger.module.groupbuy.inventory.mapper.GroupBuyInventoryReservationMapper">
 
     <select id="selectByOrderId"
-            resultType="com.linger.module.groupbuy.transaction.entity.GroupBuyInventoryReservationEntity">
+            resultType="com.linger.module.groupbuy.inventory.entity.GroupBuyInventoryReservationEntity">
         SELECT *
         FROM groupbuy_inventory_reservations
         WHERE order_id = #{orderId}

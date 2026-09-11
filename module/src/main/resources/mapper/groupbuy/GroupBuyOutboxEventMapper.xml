@@ -2,14 +2,14 @@
 <!DOCTYPE mapper
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.linger.module.groupbuy.transaction.mapper.GroupBuyOutboxEventMapper">
+<mapper namespace="com.linger.module.groupbuy.infrastructure.mapper.GroupBuyOutboxEventMapper">
 
     <insert id="insertEvent">
         INSERT INTO groupbuy_outbox_events(id, event_type, aggregate_type, aggregate_id, payload)
         VALUES (#{id}, #{eventType}, #{aggregateType}, #{aggregateId}, CAST(#{payload} AS JSONB))
     </insert>
 
-    <select id="claimBatch" resultType="com.linger.module.groupbuy.transaction.entity.GroupBuyOutboxEventEntity">
+    <select id="claimBatch" resultType="com.linger.module.groupbuy.infrastructure.entity.GroupBuyOutboxEventEntity">
         WITH candidates AS (
             SELECT id
             FROM groupbuy_outbox_events

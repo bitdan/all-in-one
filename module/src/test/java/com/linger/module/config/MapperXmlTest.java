@@ -1,13 +1,13 @@
 package com.linger.module.config;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
-import com.linger.module.groupbuy.transaction.mapper.GroupBuyActivityMapper;
-import com.linger.module.groupbuy.transaction.mapper.GroupBuyDelayTaskMapper;
-import com.linger.module.groupbuy.transaction.mapper.GroupBuyGroupMapper;
-import com.linger.module.groupbuy.transaction.mapper.GroupBuyInventoryLedgerMapper;
-import com.linger.module.groupbuy.transaction.mapper.GroupBuyMemberMapper;
-import com.linger.module.groupbuy.transaction.mapper.GroupBuyOrderMapper;
-import com.linger.module.groupbuy.transaction.mapper.GroupBuyOutboxEventMapper;
+import com.linger.module.groupbuy.activity.mapper.GroupBuyActivityMapper;
+import com.linger.module.groupbuy.infrastructure.mapper.GroupBuyDelayTaskMapper;
+import com.linger.module.groupbuy.group.mapper.GroupBuyGroupMapper;
+import com.linger.module.groupbuy.inventory.mapper.GroupBuyInventoryLedgerMapper;
+import com.linger.module.groupbuy.group.mapper.GroupBuyMemberMapper;
+import com.linger.module.groupbuy.order.mapper.GroupBuyOrderMapper;
+import com.linger.module.groupbuy.infrastructure.mapper.GroupBuyOutboxEventMapper;
 import com.linger.module.toolhub.auth.mapper.UserMapper;
 import com.linger.module.toolhub.post.mapper.PostMapper;
 import com.linger.module.toolhub.post.mapper.PostTagMapper;

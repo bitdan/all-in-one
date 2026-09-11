@@ -5,13 +5,14 @@ import com.linger.module.groupbuy.transaction.dto.CreateGroupRequest;
 import com.linger.module.groupbuy.transaction.dto.PaymentCallbackRequest;
 import com.linger.module.groupbuy.transaction.dto.PlaceGroupOrderRequest;
 import com.linger.module.groupbuy.transaction.dto.PlaceGroupOrderResponse;
-import com.linger.module.groupbuy.transaction.entity.GroupBuyActivityEntity;
-import com.linger.module.groupbuy.transaction.entity.GroupBuyGroupEntity;
-import com.linger.module.groupbuy.transaction.entity.GroupBuyOrderEntity;
+import com.linger.module.groupbuy.activity.entity.GroupBuyActivityEntity;
+import com.linger.module.groupbuy.group.entity.GroupBuyGroupEntity;
+import com.linger.module.groupbuy.infrastructure.service.RedisGroupBuyAdmissionService;
+import com.linger.module.groupbuy.order.entity.GroupBuyOrderEntity;
 import com.linger.module.groupbuy.transaction.exception.GroupBuyBusinessException;
-import com.linger.module.groupbuy.transaction.model.ActivityStatus;
-import com.linger.module.groupbuy.transaction.model.GroupInstanceStatus;
-import com.linger.module.groupbuy.transaction.model.GroupOrderStatus;
+import com.linger.module.groupbuy.activity.model.ActivityStatus;
+import com.linger.module.groupbuy.group.model.GroupInstanceStatus;
+import com.linger.module.groupbuy.order.model.GroupOrderStatus;
 import com.linger.module.groupbuy.transaction.model.ReservationResult;
 import com.linger.module.redisson.service.RateLimiterService;
 import lombok.RequiredArgsConstructor;
@@ -184,8 +185,13 @@ public class GroupBuyTransactionApplicationService {
         }
         OffsetDateTime paidAt = request.getPaidAt() == null ? now() : request.getPaidAt();
         // 状态 CAS、支付流水唯一约束和 Outbox 写入位于同一数据库事务中。
-        GroupBuyTransactionStore.PaymentRecordResult result =
-                store.recordPayment(request.getOrderId(), request.getPaymentNo(), paidAt);
+        GroupBuyTransactionStore.PaymentRecordResult result;
+        try {
+            result = store.recordPayment(request.getOrderId(), request.getPaymentNo(), paidAt);
+        } catch (DuplicateKeyException exception) {
+            // payment_no 是全局唯一业务键；被另一订单占用时返回稳定业务错误，避免暴露为 500。
+            throw business("PAYMENT_NO_CONFLICT", "支付流水号已绑定其他订单");
+        }
         switch (result) {
             case SUCCESS:
                 return "PAYMENT_ACCEPTED";
