@@ -1,127 +1,62 @@
-# 项目协作规范
+# Repository Guidelines
 
-## 项目概况
+本文件定义仓库级协作规则。各模块的技术细则放在对应目录的 `AGENTS.md` 中；处理某个文件时，只需同时遵守本文件和离该文件最近的模块规则。
 
-- 本仓库是 Java 8 Maven 多模块项目，父 `pom.xml` 统一管理依赖版本和 `dev`、`local` 环境。
-- `module/`：Spring Boot 主模块；源码和资源位于 `src/main`，测试位于 `src/test`。
-- `leetcode-editor/`：LeetCode 代码；`tool-hub/`：Vue 3 前端；`py/`：FastAPI 后端。
-- Java 使用 4 空格缩进；类名用 `PascalCase`，方法和字段用 `camelCase`，常量用 `UPPER_SNAKE_CASE`。
-- `module` 已使用 Lombok，优先用 Lombok 和构造器注入，避免手写样板构造器、Getter、Setter。
-- 提交信息遵循 Conventional Commits，如 `feat(post): add comment api`。
+## 指令分层
 
-## 构建与测试
+- 根目录 `AGENTS.md`：仓库地图、跨模块边界、通用工作流和交付要求。
+- `module/AGENTS.md`：Spring Boot、MyBatis-Plus、PostgreSQL 和 Maven 验证规则。
+- `leetcode-editor/AGENTS.md`：算法代码的组织、实现和测试规则。
+- `tool-hub/AGENTS.md`：Vue 3、Vite、Vuetify 和前端交互规则。
+- `py/AGENTS.md`：FastAPI、Agent、SQLAlchemy、Alembic 和 Python 验证规则。
+- 规则冲突时，用户当前明确要求优先，其次是离目标文件最近的 `AGENTS.md`，最后是本文件。
+- 默认只读取和需求直接相关的模块规则；跨模块任务再补读相关模块，不要无目的地展开整个仓库。
 
-在仓库根目录执行 Maven；若 `mvn` 不在 `PATH`，使用 `D:\app\apache-maven-3.6.3\bin\mvn.cmd`。
+## 仓库地图
 
-```powershell
-mvn -Plocal -pl module -am "-Dtest=HttpUtilTest,DeepSeekClientTest" "-Dsurefire.failIfNoSpecifiedTests=false" test
-mvn -Plocal -pl module -am "-Dtest=DeepSeekApiIntegrationTest" "-Dsurefire.failIfNoSpecifiedTests=false" test
-mvn -Plocal -pl module -am -DskipTests package
-mvn -pl leetcode-editor -am test
-mvn -DskipTests package
-```
+- 根 `pom.xml`：Java 8 Maven 父工程，统一管理 `module`、`leetcode-editor`、依赖版本及 `dev`、`local` Profile。
+- `module/`：Spring Boot 2.7 主模块，包含业务接口、持久化、集成能力和测试。
+- `leetcode-editor/`：独立的 Java 算法题模块。
+- `tool-hub/`：Vue 3 工具前端；目录本身是独立 Git 工作区，检查改动时在该目录内执行 Git 命令。
+- `py/`：FastAPI 后端，包含认证、社区、游戏、Agent 聊天与评测等领域。
+- `skills/`、`notes/`、`script/`：工作流说明、项目笔记和辅助脚本；除非需求直接涉及，不要顺手整理。
 
-- `module` 的 `application.yml` 使用 Maven 占位符 `@profile.active@`；执行 `module` 测试或构建时必须启用 `-Plocal`，不要直接运行未指定 Profile 的 Maven 命令。
-- 默认只运行本次改动涉及的定向测试，通过 `-Dtest=TestClass1,TestClass2` 指定测试类；除非用户明确要求，否则不要运行 `module` 全量测试。
-- PowerShell 会解析 `-Dtest` 中的逗号，指定多个测试类时需将整个 `-Dtest=...` 参数放在引号内。
-- 测试使用 JUnit 5，放在对应模块的 `src/test/java`，类名以 `*Test` 结尾。
-- 单元测试应快速、聚焦；仅在必要时添加集成测试。
-- 测试中可使用 `@Slf4j` 输出关键结果。交付时说明执行过的命令和结果。
+## 模块边界
 
-## Java 与 MyBatis-Plus
+- 功能放到拥有该业务的模块，不跨模块复制实现。Java 公共能力放 `module` 的公共包，Python 公共设施放 `py/common`、`py/core` 或 `py/db`，前端共享逻辑放现有 `components`、`composables`、`hooks`、`stores`、`utils`。
+- `module` 与 `py` 是两个独立后端边界。先确认接口归属，再修改对应 Controller/Route、Service 和持久化层。
+- `tool-hub` 只通过既有 API 层访问后端，不在页面组件中散落请求实现。
+- 不恢复已删除的 `py/agent_runtime/`、`py/project_agent/`、`py/langchain_examples/`，也不新增 `/api/v1/project-agent/*`。
+- 依赖或基础设施升级必须保持兼容组合，不单独升级强耦合组件。
 
-### 基础约束
+## 工作方式
 
-- 当前基线：Spring Boot `2.7.18`、MyBatis-Plus `3.5.17`、PostgreSQL。
-- 保留父 POM 的 BOM 版本和 `mybatis-plus-jsqlparser-4.9` 兼容依赖，不要单独升级其中一个组件。
-- Mapper 扫描和拦截器统一维护在 `MybatisPlusConfiguration`，不要重复创建配置 Bean。
-- 拦截器顺序：SQL 改写类在前，分页和乐观锁居中，分析或防攻击类在后。
-- 持久化统一使用 MyBatis-Plus，不要引入或继续使用 `JdbcTemplate`。
+1. 先定位入口文件、直接调用点和已有测试，只检查与需求有关的范围。
+2. 修改前确认目标工作区是否已有用户改动；保留无关变更，不覆盖、不回滚。
+3. 优先复用当前模块的模型、组件和基础设施，再新增最小必要实现。
+4. 接口或数据结构变化时，同步核对生产者、消费者、类型定义、持久化映射和测试。
+5. 默认执行最小范围验证；不要为了“保险”运行全仓构建、全量测试或浏览器自动化。
 
-### 分层与模型
+## API 与数据契约
 
-- Controller 请求参数使用明确的 DTO/Query/Command 类，不使用 `Map<String, Object>`。
-- Service 使用 Lombok 构造器注入；业务规则、事务编排和 DTO 转换放在 Service 或 Repository/Store。
-- 通用审计字段抽到基础实体；时间字段使用 `OffsetDateTime`，数值可空字段优先使用包装类型。
-- 分页参数和结果复用公共 `PageQuery`、`PageResult`，在 API 边界校验页码并限制每页大小。
-- 普通下划线字段依赖 `map-underscore-to-camel-case: true`，不要重复写无意义的 `@TableField`。
-- 实体明确声明 `@TableName`、`@TableId`；主键策略必须与数据库真实生成方式一致。
-- `@TableField` 只用于特殊映射、非持久化字段、自动填充或类型处理器；结果也需类型处理器时启用 `autoResultMap`。
-- 删除继续使用领域 `status`，未经整体迁移和测试不要单独引入 `@TableLogic`。
+- 后端 Controller/Route 及其 DTO、Schema 是接口契约源；前端 API 类型、查询参数和展示字段必须与之对齐，不能根据旧页面猜字段。
+- 修改接口路径、请求字段、响应字段或流式协议前，使用 `rg` 查找全部调用点，并逐一核对直接调用、封装调用和测试。
+- 请求参数使用明确类型，不使用无约束的键值对象代替 DTO/Schema。
+- 区间、集合、可空值和文件列表在各层保持一致语义；空值归一化后再发往后端。
+- 数据库 Schema 变化必须通过所属技术栈的正式迁移机制完成，并同步模型、部署配置和依赖。
 
-### Mapper 与查询
+## 通用质量与安全
 
-- Mapper 接口继承 `BaseMapper<Entity>`，只保留方法声明和必要的 `@Param`。
-- 自定义 SQL 统一放在 `module/src/main/resources/mapper/` 的对应 XML；禁止在 Mapper 中使用 SQL 注解、Provider 或注解内 `<script>`。
-- 单表常规查询优先使用 `LambdaQueryWrapper`、`LambdaUpdateWrapper`，不要用字符串字段名。
-- 联表、聚合、投影、锁、PostgreSQL 特性和原子状态迁移使用 Mapper XML。
-- Wrapper 必须在执行方法内创建，不缓存、不共享、不复用，也不暴露给 Controller 或公共服务接口。
-- 可选条件使用 Wrapper 的条件重载；更新、删除或权限查询前必须拒绝空 ID、空集合和空归属条件。
-- `selectOne` 仅用于数据库约束保证唯一的条件，禁止用任意 `LIMIT 1` 掩盖重复数据。
-- 列表查询只取需要的列，分页必须有稳定排序；禁止循环调用 Mapper，避免 N+1。
+- Java 使用 4 空格；类名 `PascalCase`，方法和字段 `camelCase`，常量 `UPPER_SNAKE_CASE`。前端和 Python 遵循各模块既有格式。
+- 提交信息遵循 Conventional Commits，例如 `feat(post): add comment api`。
+- 不在源码、`application-*.yml`、`.env*` 或示例中提交真实密钥、账号、密码和生产地址。
+- 不拼接不可信输入到 SQL、命令、文件路径或排序表达式；对动态结构使用后端白名单。
+- 新增运行时依赖时同步更新所属模块的清单和部署构建文件。
 
-### SQL 安全、事务与并发
+## 验证与交付
 
-- 不拼接用户输入到 SQL、列名或排序片段；客户端排序键必须经过后端白名单映射。
-- 不向 `apply`、`last`、`having`、`inSql`、`setSql`、`orderBy` 等方法传入不可信文本。
-- XML 参数使用 `#{}`；`${}` 仅允许固定且经过白名单验证的 SQL 结构。
-- 请求 DTO 不得直接传给 `insert`、`updateById` 或 `saveOrUpdate`，只映射允许修改的字段。
-- 所有更新和删除都要有明确业务条件，并检查影响行数；零行更新不能默认视为成功。
-- 乐观锁实体声明并初始化 `@Version`；状态迁移在 `WHERE` 中校验旧状态或旧版本，并原子更新版本。
-- 计数、库存、抢占和状态变更使用单条条件 SQL，不采用先查再改。
-- 多表写入和批处理放在公开的 `@Transactional` Service 方法中；不要依赖同类自调用开启事务。
-- 大集合使用分批处理并限制批次大小；需要原子性时显式开启事务。
-
-
-## Tool Hub 前端
-
-- `tool-hub/` 使用 Vue 3、Vite、Vuetify；API 统一通过 `src/utils/request.ts`。
-- 页面放在 `src/views` 并按领域分组；路由及导航元数据统一维护在 `src/router/index.ts`。
-- 仅需要登录的页面设置 `requiresAuth: true`；公开只读页面保持公开。
-- 导航分组在 `AppNavigation.vue` 中维护；新页面补充 `title`、`description`、`icon`、`keywords`、`featured`。
-- 优先使用 Vuetify、Material Design Icons 和成熟组件，不手写已有组件能覆盖的基础交互。
-- 样式使用 `src/main.css` 的颜色、间距、圆角、阴影变量和公共类，禁止硬编码颜色或创建一次性视觉体系。
-- 保持内部工具风格：信息紧凑、层级清楚、边框克制、操作直接，避免营销式首屏和装饰性渐变。
-- 工具页优先使用 `ToolPageLayout`；布局已显示标题时不要重复写 `<h1>`，全屏工作区使用 `:card="false"`。
-- 避免会影响 Vuetify 的全局 `button`、`input`、`textarea` 样式。
-- 股票图表、编辑器、地图、拖拽、虚拟表格等复杂组件优先采用成熟库并遵循领域惯例。
-- 前端只做静态检查、单元测试和 `npm run build`；不要运行浏览器自动化、打开 localhost 或截图验收。
-
-## Python 后端
-
-- `py/` 是 FastAPI 应用，本地命令先执行 `conda activate ai`。
-- 新功能按领域放在 `py/<domain>/`，通常包含 `schemas.py`、`service.py`、`store.py`、`routes.py`。
-- 路由工厂使用 `create_router(container)` 并在 `py/app.py` 注册；鉴权复用现有 `auth.routes` 模式。
-- API 响应尽量复用 `auth.schemas.ApiResponse`；配置放在 `py/core/settings.py`，从环境变量或 `py/.env` 读取。
-- 部署所需依赖必须加入 `py/requirements.txt`，不能只修改本地环境文件。
-- 修改后至少对相关文件运行 `python -m py_compile`；条件允许时执行应用实例化检查。
-
-## Agent 后端边界
-
-- `py/agent_chat/` 负责 `/api/v1/agent/*` 聊天入口、路由、模型回退、Skill 调度、Trace 和响应整形。
-- `py/agent_eval/` 负责运行记录、查询、反馈、评测用例、重试/取消和指标持久化。
-- `py/skills/` 只保存可复用工作流说明，运行时编排仍放在 `agent_chat`。
-- 不要恢复已删除的 `py/agent_runtime/`、`py/project_agent/`、`py/langchain_examples/`，也不要新增 `/api/v1/project-agent/*`。
-- Agent 工具保持小而明确，并统一输出 `step_id`、`node`、`status`、输入/输出摘要、耗时、错误和工具名。
-- Agent 工作台保持聊天优先，使用真实流式接口，不添加模拟输入或模板式假交互。
-
-## 数据库与迁移
-
-- 新的持久化业务优先使用 PostgreSQL、SQLAlchemy 2.0 ORM 和 Alembic。
-- 公共数据库设施放在 `py/db/`，模型归属各领域，迁移放在 `py/alembic/versions/`。
-- 业务表使用领域前缀，如 `post_`；系统账户和权限表使用 `sys_`；索引和约束同样使用领域前缀。
-- 时间字段使用 `TIMESTAMPTZ`；可变业务表包含 `created_at`、`updated_at`；用户内容优先用状态软删除。
-- 数据库连接读取 `POSTGRES_DSN`，密码保留字符需 URL 编码；Compose 内使用容器名和内部端口连接。
-- Schema 变化使用 Alembic，不只维护 `py/sql/` 参考脚本；同时更新部署连接和依赖配置。
-
-```powershell
-conda activate ai
-cd py
-python -m alembic upgrade head
-python -m alembic current
-```
-
-## 部署与协议
-
-- Python Docker 镜像从 `py/requirements.txt` 安装依赖，新增运行时组件时同步更新该文件。
-- WebSocket/SSE 等协议需要同步检查依赖、前端请求和容器日志；Uvicorn WebSocket 必须具备对应运行时依赖。
+- Java 主模块：遵守 `module/AGENTS.md`，执行带 `-Plocal` 的定向测试。
+- LeetCode 模块：遵守 `leetcode-editor/AGENTS.md`，仅验证相关题目或模块。
+- 前端：遵守 `tool-hub/AGENTS.md`；默认仅静态核对，不启动本地服务、不做截图或浏览器验收。
+- Python：遵守 `py/AGENTS.md`；至少对修改文件执行语法编译检查。
+- 交付时说明修改文件、行为变化、执行过的验证及结果；未执行的高价值验证也要明确说明原因。
