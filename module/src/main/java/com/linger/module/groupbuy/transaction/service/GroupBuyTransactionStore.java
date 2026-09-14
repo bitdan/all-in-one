@@ -167,10 +167,6 @@ public class GroupBuyTransactionStore {
         if (orderMapper.markWaitPay(order.getId(), order.getId(), payDeadline) != 1) {
             throw new IllegalStateException("订单不在 INIT 状态, orderId=" + order.getId());
         }
-        if (inventoryStockMapper.reserve(order.getActivityId(), order.getSkuId(), order.getQuantity()) != 1) {
-            throw new IllegalStateException("数据库可用库存不足, orderId=" + order.getId());
-        }
-
         OffsetDateTime now = now();
         inventoryReservationMapper.insert(GroupBuyInventoryReservationEntity.builder()
                 .id(order.getId())
@@ -200,10 +196,14 @@ public class GroupBuyTransactionStore {
                 "RESERVE", order.getQuantity());
         delayTaskMapper.insertIgnore(GroupBuyDelayTaskType.PAYMENT_TIMEOUT, order.getId(), payDeadline);
 
-        // 同一团的计数行是高并发热点。放到事务最后更新，使请求拿到 PostgreSQL 行锁后尽快提交，
-        // 避免持锁期间继续执行成员、流水和延迟任务 SQL，降低同团下单时的锁队列长度。
+        // 热点计数放在明细写入之后，按“团 -> 库存”加锁，与支付、取消和退款保持一致。
+        // 多个团共享同一库存行，因此库存必须最后更新，避免持有库存锁时写明细或等待团锁。
         if (groupMapper.incrementReserved(order.getGroupId()) != 1) {
             throw new IllegalStateException("数据库团名额镜像更新失败, groupId=" + order.getGroupId());
+        }
+        if (inventoryStockMapper.reserve(order.getActivityId(), order.getSkuId(), order.getQuantity()) != 1) {
+            // 条件扣减失败仍抛出异常，由同一事务回滚此前的订单、明细和团计数。
+            throw new IllegalStateException("数据库可用库存不足, orderId=" + order.getId());
         }
     }
 
@@ -340,6 +340,10 @@ public class GroupBuyTransactionStore {
         }
         if (memberMapper.markRefunded(order.getId()) != 1) {
             throw new IllegalStateException("更新团成员退款状态失败, orderId=" + order.getId());
+        }
+        // refundInventory 会更新库存；先锁团，避免与下单/取消的“团 -> 库存”顺序相反。
+        if (groupMapper.selectForUpdate(order.getGroupId()) == null) {
+            throw new IllegalStateException("退款所属团不存在, groupId=" + order.getGroupId());
         }
         InventoryReservationStatus previousInventoryStatus = refundInventory(order);
         int affectedGroupRows = previousInventoryStatus == InventoryReservationStatus.CONFIRMED

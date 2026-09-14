@@ -21,6 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -31,6 +32,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -80,8 +82,45 @@ class GroupBuyTransactionStoreTest {
         verify(ledgerMapper).insertIgnore(1L, "SKU-1", "order-1", "RESERVE", 1);
         verify(delayTaskMapper).insertIgnore("PAYMENT_TIMEOUT", "order-1", deadline);
 
+        // 库存行是跨团热点：拿锁之后不能继续写明细，也不能再等待团锁。
+        InOrder writes = inOrder(orderMapper, inventoryReservationMapper, memberMapper,
+                ledgerMapper, delayTaskMapper, groupMapper, inventoryStockMapper);
+        writes.verify(orderMapper).markWaitPay("order-1", "order-1", deadline);
+        writes.verify(inventoryReservationMapper).insert(any(GroupBuyInventoryReservationEntity.class));
+        writes.verify(memberMapper).insert(any(GroupBuyMemberEntity.class));
+        writes.verify(ledgerMapper).insertIgnore(1L, "SKU-1", "order-1", "RESERVE", 1);
+        writes.verify(delayTaskMapper).insertIgnore("PAYMENT_TIMEOUT", "order-1", deadline);
+        writes.verify(groupMapper).incrementReserved(2L);
+        writes.verify(inventoryStockMapper).reserve(1L, "SKU-1", 1);
+        writes.verifyNoMoreInteractions();
+
         log.info("预占事务落库：order={}, member={}, inventoryOperation=RESERVE, quantity={}, timeoutAt={}",
                 order, memberCaptor.getValue(), order.getQuantity(), deadline);
+    }
+
+    @Test
+    void shouldFailReservationTransactionWhenFinalStockUpdateRejects() {
+        OffsetDateTime deadline = OffsetDateTime.now(ZoneOffset.UTC).plusMinutes(5);
+        when(orderMapper.markWaitPay("no-stock", "no-stock", deadline)).thenReturn(1);
+        when(groupMapper.incrementReserved(2L)).thenReturn(1);
+        when(inventoryStockMapper.reserve(1L, "SKU-1", 1)).thenReturn(0);
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> store.confirmReservation(order("no-stock", GroupOrderStatus.INIT), deadline));
+
+        assertTrue(failure.getMessage().contains("数据库可用库存不足"));
+    }
+
+    @Test
+    void shouldNotLockStockWhenGroupHasNoSeat() {
+        OffsetDateTime deadline = OffsetDateTime.now(ZoneOffset.UTC).plusMinutes(5);
+        when(orderMapper.markWaitPay("no-seat", "no-seat", deadline)).thenReturn(1);
+        when(groupMapper.incrementReserved(2L)).thenReturn(0);
+
+        assertThrows(IllegalStateException.class,
+                () -> store.confirmReservation(order("no-seat", GroupOrderStatus.INIT), deadline));
+
+        verify(inventoryStockMapper, never()).reserve(1L, "SKU-1", 1);
     }
 
     @Test
@@ -171,6 +210,7 @@ class GroupBuyTransactionStoreTest {
         when(memberMapper.markRefunded("order-4")).thenReturn(1);
         when(groupMapper.decrementReserved(2L)).thenReturn(1);
         when(inventoryReservationMapper.selectByOrderId("order-4")).thenReturn(reservation);
+        when(groupMapper.selectForUpdate(2L)).thenReturn(GroupBuyGroupEntity.builder().id(2L).build());
         when(inventoryReservationMapper.markRefunded("order-4", "RESERVED")).thenReturn(1);
         when(inventoryStockMapper.release(1L, "SKU-1", 1)).thenReturn(1);
 
@@ -179,6 +219,10 @@ class GroupBuyTransactionStoreTest {
         verify(groupMapper).decrementReserved(2L);
         verify(groupMapper, never()).decrementPaidAndReserved(2L);
         verify(inventoryStockMapper).release(1L, "SKU-1", 1);
+        InOrder locks = inOrder(groupMapper, inventoryStockMapper);
+        locks.verify(groupMapper).selectForUpdate(2L);
+        locks.verify(inventoryStockMapper).release(1L, "SKU-1", 1);
+        locks.verify(groupMapper).decrementReserved(2L);
     }
 
     private GroupBuyOrderEntity order(String id, GroupOrderStatus status) {

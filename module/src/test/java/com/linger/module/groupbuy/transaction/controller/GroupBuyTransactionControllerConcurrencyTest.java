@@ -1,6 +1,7 @@
 package com.linger.module.groupbuy.transaction.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.linger.module.groupbuy.infrastructure.service.GroupBuyDelayScheduler;
 import com.linger.module.groupbuy.infrastructure.service.GroupBuyOutboxProcessor;
@@ -25,12 +26,21 @@ import com.linger.module.groupbuy.order.mapper.GroupBuyOrderMapper;
 import com.linger.module.groupbuy.group.model.GroupInstanceStatus;
 import com.linger.module.groupbuy.order.model.GroupOrderStatus;
 import com.linger.module.groupbuy.inventory.model.InventoryReservationStatus;
+import com.linger.module.groupbuy.inventory.model.InventoryOperation;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import okhttp3.OkHttpClient;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.redisson.api.RMap;
 import org.redisson.api.RedissonClient;
 import org.redisson.client.codec.StringCodec;
@@ -39,39 +49,55 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.ResponseEntity;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.http.client.OkHttp3ClientHttpRequestFactory;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.function.IntFunction;
+import java.util.function.ToLongFunction;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * 拼团交易接口真实并发集成测试。
  *
- * <p>测试通过 {@code groupbuy.concurrent.base-url} 访问指定的已部署节点，并使用 local profile 中配置的
+ * <p>测试通过代码中固定的 {@code baseUrl} 访问已部署节点，并使用 local profile 中配置的
  * PostgreSQL 和 Redis 做一致性校验。测试进程不启动 Web 服务，也不参与 Outbox 和延迟任务消费。每次运行使用
  * 唯一活动和 SKU，测试数据会保留在数据库与 Redis 中，方便执行后人工对账。</p>
+ *
+ * <p>性能场景按并发线程数分档，每个线程完成一次HTTP调用后继续处理下一请求，不设目标QPS。
+ * 每档默认测量1000次请求，预热20次不计入统计；可通过
+ * {@code groupbuy.concurrent.measure-requests}、{@code groupbuy.concurrent.warmup-requests}、
+ * {@code groupbuy.concurrent.groups} 调整样本数与团数，并发档位由各方法的ValueSource指定。
+ * QPS按测量请求的实际耗时计算；P95为单次HTTP调用耗时，不含尚未开始的批次任务等待时间。
+ * QPS和P95仅作观测，不设达标断言，业务结果与一致性仍严格校验。多团共享同一活动及SKU，
+ * baseUrl应直连单节点。库存不足测量完整HTTP拒绝路径，仍包含当前实现的数据库读写。</p>
+ * <p>仅运行性能场景时使用 Maven 参数
+ * {@code -Dtest=GroupBuyTransactionControllerConcurrencyTest#shouldAcceptAllOrdersForHotGroup+shouldAcceptAllOrdersAcrossGroups+shouldRejectOutOfStockOrdersQuickly}。
+ * 测试依赖目标节点使用相同的PostgreSQL/Redis及已完成迁移的Schema；压测期间保留未支付订单，
+ * 不同档位串行执行，建议在专用测试环境运行。</p>
+ * <p>每档的待执行队列最多容纳该档的固定样本数，不随接口变慢持续增加请求。
+ * HTTP整次调用默认10秒超时，批次完成等待默认120秒；可通过
+ * {@code groupbuy.concurrent.http-call-timeout-ms}、{@code groupbuy.concurrent.drain-timeout-ms} 调整。
+ * 发压异常后跳过后续测试，避免未完成的服务端请求影响下一档；客户端取消不代表服务端订单回滚。</p>
  */
 @Slf4j
 @ActiveProfiles("local")
+@Execution(ExecutionMode.SAME_THREAD)
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @SpringBootTest(
         classes = LingerApplication.class,
         webEnvironment = SpringBootTest.WebEnvironment.NONE,
@@ -86,6 +112,17 @@ class GroupBuyTransactionControllerConcurrencyTest {
 
     private TestRestTemplate restTemplate;
     private String baseUrl;
+    private OkHttpClient httpClient;
+    private String stopReason;
+    private final List<String> performanceSummaries = new ArrayList<>();
+
+    @AfterAll
+    void printPerformanceSummaries() {
+        if (!performanceSummaries.isEmpty()) {
+            log.info("各并发档位实测汇总（包含失败档位，仅业务校验通过的档位可用于评估有效吞吐）：");
+            performanceSummaries.forEach(summary -> log.info("{}", summary));
+        }
+    }
 
     @MockBean
     private GroupBuyOutboxProcessor outboxProcessor;
@@ -110,14 +147,30 @@ class GroupBuyTransactionControllerConcurrencyTest {
 
     @BeforeEach
     void configureHttpTimeout() {
+        assumeTrue(stopReason == null, () -> "上一场景发压异常，停止后续测试：" + stopReason);
         baseUrl = "http://43.156.83.246:9999";
-        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-        requestFactory.setConnectTimeout(10_000);
-        requestFactory.setReadTimeout(
-                positiveSystemProperty("groupbuy.concurrent.http-read-timeout-ms", 60_000));
+        httpClient = new OkHttpClient.Builder()
+                .connectTimeout(5_000, TimeUnit.MILLISECONDS)
+                .readTimeout(positiveSystemProperty("groupbuy.concurrent.http-read-timeout-ms", 10_000),
+                        TimeUnit.MILLISECONDS)
+                .callTimeout(positiveSystemProperty("groupbuy.concurrent.http-call-timeout-ms", 10_000),
+                        TimeUnit.MILLISECONDS)
+                .retryOnConnectionFailure(false)
+                .followRedirects(false)
+                .build();
         restTemplate = new TestRestTemplate();
-        restTemplate.getRestTemplate().setRequestFactory(requestFactory);
+        restTemplate.getRestTemplate().setRequestFactory(new OkHttp3ClientHttpRequestFactory(httpClient));
         log.info("并发测试目标节点：{}", baseUrl);
+    }
+
+    @AfterEach
+    void closeHttpClient() {
+        if (httpClient != null) {
+            httpClient.dispatcher().cancelAll();
+            httpClient.connectionPool().evictAll();
+            httpClient.dispatcher().executorService().shutdownNow();
+            httpClient = null;
+        }
     }
 
     @Test
@@ -178,13 +231,164 @@ class GroupBuyTransactionControllerConcurrencyTest {
                 runId, context.getActivityId(), context.getGroupId(), acceptedOrderIds.size());
     }
 
+    @ParameterizedTest(name = "热门单团：{0} 个并发线程，观测实际QPS和P95")
+    @ValueSource(ints = {5, 10, 20, 50})
+    @Timeout(value = 5, unit = TimeUnit.MINUTES)
+    void shouldAcceptAllOrdersForHotGroup(int threads) throws Exception {
+        runPerformanceScenario("热门单团", threads, 1, false);
+    }
+
+    @ParameterizedTest(name = "多团分散：{0} 个并发线程，观测实际QPS和P95")
+    @ValueSource(ints = {10, 20, 50, 100})
+    @Timeout(value = 5, unit = TimeUnit.MINUTES)
+    void shouldAcceptAllOrdersAcrossGroups(int threads) throws Exception {
+        int groups = positiveSystemProperty("groupbuy.concurrent.groups", 20);
+        assertTrue(groups > 1, "分散下单至少需要两个团");
+        runPerformanceScenario("多团分散", threads, groups, false);
+    }
+
+    @ParameterizedTest(name = "Redis库存不足：{0} 个并发线程，观测拒绝QPS和P95")
+    @ValueSource(ints = {20, 50, 100, 200})
+    @Timeout(value = 5, unit = TimeUnit.MINUTES)
+    void shouldRejectOutOfStockOrdersQuickly(int threads) throws Exception {
+        runPerformanceScenario("Redis库存不足", threads, 1, true);
+    }
+
+    private void runPerformanceScenario(String scene, int threads, int groupCount,
+                                        boolean soldOut) throws Exception {
+        int requests = positiveSystemProperty("groupbuy.concurrent.measure-requests", 1000);
+        assertTrue(requests >= threads, "测量请求数不能少于并发线程数");
+        int warmup = positiveSystemProperty("groupbuy.concurrent.warmup-requests", 20);
+        int totalRequests = Math.addExact(requests, warmup);
+        assertTrue(groupCount <= requests, "每个团至少应收到一次测量请求");
+        int stock = soldOut ? 0 : totalRequests;
+        int groupCapacity = Math.max(2, (totalRequests + groupCount - 1) / groupCount);
+        String runId = System.currentTimeMillis() + "-" + UUID.randomUUID().toString().substring(0, 8);
+        String skuId = "PERF-" + runId;
+        TestContext first = createAndPublishActivity(runId, skuId, stock, groupCapacity);
+        List<TestContext> groups = new ArrayList<>();
+        groups.add(first);
+        for (int i = 1; i < groupCount; i++) {
+            groups.add(createGroup(first.getActivityId()));
+        }
+        String expectedCode = soldOut ? "OUT_OF_STOCK" : "ACCEPTED";
+        IntFunction<HttpCallResult> placeOrder = index -> {
+            TestContext group = groups.get(index % groups.size());
+            PlaceGroupOrderRequest request = new PlaceGroupOrderRequest();
+            request.setRequestId("PERF-" + runId + "-" + index);
+            request.setUserId(2_000_000L + index);
+            request.setActivityId(group.getActivityId());
+            request.setGroupId(group.getGroupId());
+            request.setQuantity(1);
+            return post("/api/v1/groupbuy/orders", request);
+        };
+        for (int i = 0; i < warmup; i++) {
+            HttpCallResult result = placeOrder.apply(i);
+            assertTrue(result.getHttpStatus() >= 200 && result.getHttpStatus() < 300);
+            assertEquals(expectedCode, result.getCode(), "预热失败：" + result.getBody());
+        }
+        log.info("性能观测开始：scene={}, runId={}, activityId={}, groups={}, requests={}, threads={}",
+                scene, runId, first.getActivityId(), groupCount, requests, threads);
+        BatchResult batch = executeBatch(scene, requests, threads,
+                index -> placeOrder.apply(warmup + index));
+        String measurement = String.format(Locale.ROOT,
+                "scene=%s, threads=%d, requests=%d, elapsedMs=%d, actualQps=%.2f, "
+                        + "expectedCode=%s, expectedCodeQps=%.2f, expectedResponses=%d/%d, p95Ms=%d, clientErrors=%d",
+                scene, threads, requests, batch.getElapsedMs(), batch.throughputPerSecond(), expectedCode,
+                batch.count(expectedCode) * 1000D / Math.max(1L, batch.getElapsedMs()),
+                batch.count(expectedCode), requests, batch.p95LatencyMs(), batch.getErrors().size());
+        // 在业务断言之前记录，失败档位也保留实际吞吐和错误信息。
+        log.info("性能观测结果：{}", measurement);
+        int summaryIndex = performanceSummaries.size();
+        performanceSummaries.add(measurement + ", validation=FAILED");
+        assertBatchCompleted(batch, requests);
+        assertEquals(requests, batch.count(expectedCode), "业务返回码不符合预期：" + batch.codeCounts());
+        if (!soldOut) {
+            assertEquals(requests, batch.getResults().stream().map(HttpCallResult::getOrderId)
+                    .filter(id -> id != null && !id.isEmpty()).distinct().count(), "成功订单ID必须非空且唯一");
+        }
+        verifyPerformanceState(groups, skuId, totalRequests, soldOut);
+        performanceSummaries.set(summaryIndex, measurement + ", validation=PASSED");
+    }
+
+    private void verifyPerformanceState(List<TestContext> groups, String skuId,
+                                        int totalRequests, boolean soldOut) {
+        long activityId = groups.get(0).getActivityId();
+        int accepted = soldOut ? 0 : totalRequests;
+        GroupBuyInventoryStockEntity stock = inventoryStockMapper.selectOne(
+                new LambdaQueryWrapper<GroupBuyInventoryStockEntity>()
+                        .eq(GroupBuyInventoryStockEntity::getActivityId, activityId)
+                        .eq(GroupBuyInventoryStockEntity::getSkuId, skuId));
+        assertEquals(0, stock.getAvailableQuantity());
+        assertEquals(accepted, stock.getReservedQuantity());
+        assertEquals(0, stock.getConfirmedQuantity());
+        Map<String, String> redisStock = redisState(stockKey(activityId, skuId));
+        assertEquals("0", redisStock.get("available"));
+        assertEquals(String.valueOf(accepted), redisStock.get("reserved"));
+        assertEquals("0", redisStock.get("confirmed"));
+        assertEquals(Long.valueOf(accepted), ledgerMapper.selectCount(
+                new LambdaQueryWrapper<GroupBuyInventoryLedgerEntity>()
+                        .eq(GroupBuyInventoryLedgerEntity::getActivityId, activityId)
+                        .eq(GroupBuyInventoryLedgerEntity::getOperation, InventoryOperation.RESERVE)));
+        assertEquals(Long.valueOf(accepted), inventoryReservationMapper.selectCount(
+                new LambdaQueryWrapper<GroupBuyInventoryReservationEntity>()
+                        .eq(GroupBuyInventoryReservationEntity::getActivityId, activityId)
+                        .eq(GroupBuyInventoryReservationEntity::getStatus, InventoryReservationStatus.RESERVED)));
+        for (int i = 0; i < groups.size(); i++) {
+            long groupId = groups.get(i).getGroupId();
+            int groupRequests = totalRequests / groups.size() + (i < totalRequests % groups.size() ? 1 : 0);
+            int groupAccepted = soldOut ? 0 : groupRequests;
+            GroupBuyGroupEntity group = groupMapper.selectById(groupId);
+            assertEquals(GroupInstanceStatus.OPEN, group.getStatus());
+            assertEquals(groupAccepted, group.getReservedCount());
+            assertEquals(String.valueOf(groupAccepted),
+                    redisState(groupKey(activityId, skuId, groupId)).get("reservedCount"));
+            assertEquals(Long.valueOf(groupAccepted), memberMapper.selectCount(
+                    new LambdaQueryWrapper<GroupBuyMemberEntity>().eq(GroupBuyMemberEntity::getGroupId, groupId)));
+            List<GroupBuyOrderEntity> orders = orderMapper.selectByGroupId(groupId);
+            assertEquals(groupRequests, orders.size());
+            assertEquals(groupRequests, orders.stream().filter(order -> order.getStatus()
+                    == (soldOut ? GroupOrderStatus.REJECTED : GroupOrderStatus.WAIT_PAY)).count());
+        }
+    }
+
+    private BatchResult executeBatch(String scene, int taskCount, int threads,
+                                      IntFunction<HttpCallResult> action) {
+        // 取消操作只作用于本轮客户端。
+        OkHttpClient batchClient = httpClient;
+        GroupBuyLoadRunner.Result<HttpCallResult> run = GroupBuyLoadRunner.run(
+                taskCount, threads, taskCount, 0,
+                positiveSystemProperty("groupbuy.concurrent.drain-timeout-ms", 120_000),
+                positiveSystemProperty("groupbuy.concurrent.shutdown-timeout-ms", 12_000),
+                (index, scheduledAt) -> action.apply(index), () -> batchClient.dispatcher().cancelAll());
+        BatchResult batch = new BatchResult(run.getResponses(), run.getErrors(),
+                TimeUnit.NANOSECONDS.toMillis(run.getElapsedNanos()), run.getFirstFailure());
+        log.info("{}性能汇总：threads={}, planned={}, submitted={}, completed={}, responses={}, "
+                        + "notSubmitted={}, unfinished={}, cancelledQueued={}, terminated={}, elapsedMs={}, "
+                        + "actualQps={}, p95Ms={}, httpP95Ms={}, codes={}, errors={}",
+                scene, threads, run.getPlanned(), run.getSubmitted(), run.getCompleted(), batch.getResults().size(),
+                run.getPlanned() - run.getSubmitted(), run.getSubmitted() - run.getCompleted(),
+                run.getCancelledQueued(), run.isTerminated(), batch.getElapsedMs(), batch.throughputPerSecond(),
+                batch.p95LatencyMs(), batch.percentile95(HttpCallResult::getHttpLatencyMs),
+                batch.codeCounts(), batch.getErrors().size());
+        if (!run.getErrors().isEmpty() || run.getSubmitted() != taskCount || !run.isTerminated()) {
+            stopReason = scene + "：" + run.getErrors().stream().limit(5).collect(Collectors.toList());
+            log.error("{}发压失败，首个异常及清理异常：{}", scene, stopReason, run.getFirstFailure());
+        }
+        return batch;
+    }
+
     private TestContext createAndPublishActivity(String runId, String skuId, int capacity) throws Exception {
+        return createAndPublishActivity(runId, skuId, capacity, capacity);
+    }
+
+    private TestContext createAndPublishActivity(String runId, String skuId, int stock, int capacity) throws Exception {
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         CreateActivityRequest activityRequest = new CreateActivityRequest();
         activityRequest.setName("真实并发接口测试-" + runId);
         activityRequest.setSkuId(skuId);
         activityRequest.setUnitPrice(UNIT_PRICE);
-        activityRequest.setTotalStock(capacity);
+        activityRequest.setTotalStock(stock);
         activityRequest.setPerUserLimit(1);
         activityRequest.setTargetCount(capacity);
         activityRequest.setPayTimeoutSeconds(600L);
@@ -199,6 +403,10 @@ class GroupBuyTransactionControllerConcurrencyTest {
         HttpCallResult published = post("/api/v1/groupbuy/activities/" + activityId + "/publish", null);
         assertEquals("SUCCESS", published.getCode(), "发布活动接口失败：" + published.getBody());
 
+        return createGroup(activityId);
+    }
+
+    private TestContext createGroup(long activityId) {
         CreateGroupRequest groupRequest = new CreateGroupRequest();
         groupRequest.setCreatorUserId(900_000L);
         HttpCallResult groupCreated = post(
@@ -206,8 +414,8 @@ class GroupBuyTransactionControllerConcurrencyTest {
         assertEquals("SUCCESS", groupCreated.getCode(), "创建拼团接口失败：" + groupCreated.getBody());
         long groupId = groupCreated.getJson().path("data").path("id").asLong();
 
-        log.info("测试数据初始化完成：activity={}, group={}",
-                created.getJson().path("data"), groupCreated.getJson().path("data"));
+        log.info("测试数据初始化完成：activityId={}, group={}",
+                activityId, groupCreated.getJson().path("data"));
         return new TestContext(activityId, groupId);
     }
 
@@ -215,52 +423,7 @@ class GroupBuyTransactionControllerConcurrencyTest {
                                             int taskCount,
                                             int threadCount,
                                             IntFunction<HttpCallResult> action) throws InterruptedException {
-        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
-        CountDownLatch ready = new CountDownLatch(threadCount);
-        CountDownLatch start = new CountDownLatch(1);
-        CountDownLatch done = new CountDownLatch(taskCount);
-        List<HttpCallResult> results = Collections.synchronizedList(new ArrayList<>());
-        ConcurrentLinkedQueue<String> errors = new ConcurrentLinkedQueue<>();
-        long batchStartedAt = System.nanoTime();
-
-        try {
-            for (int i = 0; i < taskCount; i++) {
-                final int index = i;
-                executor.submit(() -> {
-                    ready.countDown();
-                    try {
-                        start.await();
-                        results.add(action.apply(index));
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        errors.add("task=" + index + ", interrupted=" + e.getMessage());
-                    } catch (Exception e) {
-                        errors.add("task=" + index + ", error=" + e.getClass().getSimpleName()
-                                + ": " + e.getMessage());
-                    } finally {
-                        done.countDown();
-                    }
-                });
-            }
-
-            assertTrue(ready.await(15, TimeUnit.SECONDS), scene + "工作线程未能按时就绪");
-            start.countDown();
-            assertTrue(done.await(90, TimeUnit.SECONDS), scene + "未在90秒内完成");
-        } finally {
-            start.countDown();
-            executor.shutdownNow();
-            assertTrue(executor.awaitTermination(10, TimeUnit.SECONDS), scene + "线程池未正常结束");
-        }
-
-        BatchResult batch = new BatchResult(results, new ArrayList<>(errors),
-                TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - batchStartedAt));
-        log.info("{}汇总：total={}, elapsedMs={}, throughputPerSecond={}, p95Ms={}, codes={}, data={}",
-                scene, results.size(), batch.getElapsedMs(), batch.throughputPerSecond(),
-                batch.p95LatencyMs(), batch.codeCounts(), batch.dataCounts());
-        if (!errors.isEmpty()) {
-            log.error("{}客户端异常：{}", scene, errors);
-        }
-        return batch;
+        return executeBatch(scene, taskCount, Math.min(threadCount, taskCount), action);
     }
 
     private HttpCallResult post(String path, Object request) {
@@ -284,7 +447,7 @@ class GroupBuyTransactionControllerConcurrencyTest {
             String orderId = data.isObject() ? textOrNull(data.path("orderId")) : null;
             String dataText = data.isTextual() ? data.asText() : null;
             return new HttpCallResult(response.getStatusCodeValue(), json.path("code").asText(),
-                    orderId, dataText, latencyMs, response.getBody(), json);
+                    orderId, dataText, latencyMs, latencyMs, response.getBody(), json);
         } catch (Exception e) {
             throw new IllegalStateException("接口响应不是合法JSON, path=" + path
                     + ", status=" + response.getStatusCodeValue() + ", body=" + response.getBody(), e);
@@ -408,7 +571,10 @@ class GroupBuyTransactionControllerConcurrencyTest {
     }
 
     private void assertBatchCompleted(BatchResult batch, int expectedCount) {
-        assertTrue(batch.getErrors().isEmpty(), "并发请求存在客户端异常：" + batch.getErrors());
+        if (!batch.getErrors().isEmpty()) {
+            throw new AssertionError("并发请求存在客户端异常（最多展示前10条）："
+                    + batch.getErrors().stream().limit(10).collect(Collectors.toList()), batch.getFirstFailure());
+        }
         assertEquals(expectedCount, batch.getResults().size(), "并发请求返回数量不完整");
         assertEquals(expectedCount, batch.getResults().stream()
                 .filter(result -> result.getHttpStatus() >= 200 && result.getHttpStatus() < 300)
@@ -450,6 +616,7 @@ class GroupBuyTransactionControllerConcurrencyTest {
         private String orderId;
         private String dataText;
         private long latencyMs;
+        private long httpLatencyMs;
         private String body;
         private JsonNode json;
     }
@@ -460,6 +627,7 @@ class GroupBuyTransactionControllerConcurrencyTest {
         private List<HttpCallResult> results;
         private List<String> errors;
         private long elapsedMs;
+        private Throwable firstFailure;
 
         private long count(String code) {
             return results.stream().filter(result -> code.equals(result.getCode())).count();
@@ -482,11 +650,15 @@ class GroupBuyTransactionControllerConcurrencyTest {
         }
 
         private long p95LatencyMs() {
+            return percentile95(HttpCallResult::getLatencyMs);
+        }
+
+        private long percentile95(ToLongFunction<HttpCallResult> latency) {
             if (results.isEmpty()) {
                 return 0L;
             }
             List<Long> latencies = results.stream()
-                    .map(HttpCallResult::getLatencyMs)
+                    .map(result -> latency.applyAsLong(result))
                     .sorted()
                     .collect(Collectors.toList());
             int index = Math.max(0, (int) Math.ceil(latencies.size() * 0.95D) - 1);
