@@ -1,4 +1,0 @@
-interface:
-  display_name: "NL to SQL Generator"
-  short_description: "自然语言生成只读 SQL"
-  default_prompt: "Use $nl-to-sql-generator to convert a business question plus schema details into safe read-only SQL without executing it."

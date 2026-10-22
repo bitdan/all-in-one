@@ -1,4 +1,0 @@
-﻿interface:
-  display_name: "Java Stacktrace Analyzer"
-  short_description: "分析 Java 堆栈并定位根因与修复建议"
-  default_prompt: "Use $java-stacktrace-analyzer to analyze a Java stack trace, identify the root cause, and suggest concrete fixes."

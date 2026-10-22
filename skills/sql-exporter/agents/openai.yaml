@@ -1,4 +1,0 @@
-interface:
-  display_name: "SQL Exporter"
-  short_description: "执行只读 SQL 并导出结果"
-  default_prompt: "Use $sql-exporter to validate and run an existing read-only SQL query, then optionally export the results."
